@@ -1,0 +1,14 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+app/build
+libzt/cache
+libzt/dist
+libzt/pkg/android/.gradle
+libzt/pkg/android/app/build
