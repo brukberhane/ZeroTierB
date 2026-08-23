@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -552,6 +554,20 @@ class ZerotierBVpnService :
             updateState { copy(statusMessage = "VPN establish failed — grant VPN consent") }
             return@withLock
         }
+        try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            val underlying = cm?.allNetworks?.filter { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@filter false
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }?.toTypedArray()
+            if (!underlying.isNullOrEmpty()) {
+                setUnderlyingNetworks(underlying)
+                lastUnderlyingNetworkHandle = underlying.first().networkHandle
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "setUnderlyingNetworks failed: ${e.message}")
+        }
         val newIn = FileInputStream(newSocket.fileDescriptor)
         val newOut = FileOutputStream(newSocket.fileDescriptor)
 
@@ -721,6 +737,10 @@ class ZerotierBVpnService :
 
         private val _state = MutableStateFlow(VpnServiceState())
         val state: StateFlow<VpnServiceState> = _state.asStateFlow()
+
+        @Volatile
+        var lastUnderlyingNetworkHandle: Long? = null
+            private set
 
         fun start(context: Context) {
             val intent = Intent(context, ZerotierBVpnService::class.java)

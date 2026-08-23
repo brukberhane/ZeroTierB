@@ -43,3 +43,11 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 | RuntimePlan tests need a device | Resolver takes `Network` / `Context` | Pass already-classified `PhysicalLink` data class |
 
 <!-- last-verified: 2026-08 -->
+
+### `advanceUntilIdle drains delays`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Debounce test: expected 0 runs after partial `advanceTimeBy`, got action already | `advanceUntilIdle()` advances virtual time until **all** delayed jobs finish | Use `runCurrent()` + exact `advanceTimeBy`; avoid `advanceUntilIdle` mid-debounce |
+
+<!-- last-verified: 2026-08 -->

@@ -1,6 +1,6 @@
 ---
 description: Physical link classification — Wi-Fi SSID, per-SIM cellular, Other
-globs: "**/connectivity/**/*.kt,**/LinkClassifier.kt,**/LinkDebouncer.kt"
+globs: "**/connectivity/**/*.kt,**/connection/Link*.kt,**/connection/Ssid*.kt,**/connection/PhysicalLinkSelector.kt,**/LinkNetworkCallback.kt"
 alwaysApply: false
 ---
 
@@ -8,21 +8,22 @@ alwaysApply: false
 
 ## Scope
 
-- Choosing the physical `Network` (not our VPN overlay)
-- Wi-Fi SSID normalize + unknown → implicit PROXY (no auto Room row)
-- Per-`subscriptionId` mobile profiles
+- Choosing the physical `Network` (not our VPN overlay) → `PhysicalLink`
+- Wi-Fi SSID normalize + unknown → `WifiUnknown` / implicit PROXY (no auto Room row)
+- Per-`subscriptionId` mobile profiles (sub id passed in; live `SubscriptionManager` is T08)
 - Built-in Other (ethernet, USB, Bluetooth PAN client, leftover)
-- Trailing debounce (default 5s, clamp 3–15s)
+- Trailing debounce (default 5s, clamp 3–15s) via `LinkDebouncer`
 
-Does **not** cover: RuntimePlan resolve (connection-orchestrator), APN DB writes.
+Does **not** cover: RuntimePlan resolve (connection-orchestrator), APN DB writes, callback registration lifecycle (T08).
 
 ## Invariants
 
-1. Never treat our `VpnService` network as the physical link.
-2. Unknown SSID (`<unknown ssid>`, empty, no location perm) → PROXY, do not insert `LinkProfile`.
-3. Dual-SIM: match **data** subscription, not "any cellular".
-4. Phone as hotspot AP: classify the **upstream** default network, not the AP iface.
-5. Last `NetworkCallback` event wins after quiet period.
+1. Never treat our `VpnService` network as the physical link — strip `TRANSPORT_VPN` and pick Wi‑Fi/cell/other via `PhysicalLinkSelector`.
+2. Public SDK jars may **lack** `NetworkCapabilities.getUnderlyingNetworks()` — do not depend on it; scan `allNetworks` instead. Still call `VpnService.setUnderlyingNetworks` on establish when available.
+3. Unknown SSID (`<unknown ssid>`, `0x…`, empty, no location perm) → `WifiUnknown`; do not insert `LinkProfile`.
+4. Dual-SIM: match **data** subscription, not "any cellular".
+5. Phone as hotspot AP: classify the **upstream** default network, not the AP iface.
+6. Last `NetworkCallback` event wins after quiet period (`LinkDebouncer` trailing).
 
 ## External docs
 
@@ -47,5 +48,13 @@ SSID is location-restricted: https://developer.android.com/develop/connectivity/
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | SIM 1 profile while data is SIM 2 | Used `default` slot not data sub | `getActiveDataSubscriptionId()` / network subscription ids |
+
+<!-- last-verified: 2026-08 -->
+
+### `Vpn overlay classified as Other`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| AUTO flaps when our VPN is up | `activeNetwork` is `TRANSPORT_VPN` | If ours (`ZerotierBVpnService.state.isRunning`), scan non-VPN nets via `PhysicalLinkSelector`; third-party VPN → Other |
 
 <!-- last-verified: 2026-08 -->

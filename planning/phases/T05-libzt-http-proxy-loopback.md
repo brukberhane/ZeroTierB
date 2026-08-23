@@ -94,3 +94,10 @@ Restore archive proxy server + RouteResolver (no blockOutside). Bind 127.0.0.1:0
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T04 close-out
+
+- Classifier/debounce land in `connection/` (`LinkClassifier`, `LinkDebouncer`, `PhysicalLinkSelector`). Callback shell: `system/LinkNetworkCallback` — **not registered** until T08.
+- Strip our VPN via scan (`PhysicalLinkSelector`); do not call missing public `getUnderlyingNetworks`.
+- `ZerotierBVpnService` sets `setUnderlyingNetworks` on establish; `state.isRunning` for “ours”.
+- Exclusive stack mutex still required for libzt vs JNI (T05 spike / T07).
