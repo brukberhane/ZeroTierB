@@ -93,3 +93,11 @@ SystemProxyManager: save/restore Global HTTP_PROXY. Enable only after bind. Shiz
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T05 close-out
+
+- `com.brukb.zerotier.proxy.ProxyModeService` — start via `ProxyModeService.start(context)` or intent `ACTION_START`; no orchestrator/UI yet.
+- HTTP proxy listens `127.0.0.1:0`; actual port in `ProxyServiceState.httpProxyPort` and `AppPreferences.lastHttpProxyPort`.
+- T06 `SystemProxyManager` must bind-listen first (already done in T05 service), then write Global — read port from service state or prefs.
+- No `Settings.Global` write in T05; Shizuku not added yet.
+- VPN mutex: proxy refuses when VPN running unless `EXTRA_FORCE_DEBUG`.

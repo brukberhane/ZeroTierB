@@ -71,6 +71,7 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(files(rootProject.file("libzt/dist/android-any-android-release/libzt-release.aar")))
 
     // Compose BOM must match AGP/Kotlin analysis API. 2026.06.00 crashes lint
     // detectors against AGP 8.7.3 + Kotlin 2.0.21 (Ka*Call class/interface).

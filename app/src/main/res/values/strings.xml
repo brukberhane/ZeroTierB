@@ -4,4 +4,6 @@
     <string name="notification_channel_desc">ZeroTier VPN connection status</string>
     <string name="notification_title">ZerotierB running</string>
     <string name="notification_text">VPN active</string>
+    <string name="notification_proxy_channel_name">ZerotierB Proxy</string>
+    <string name="notification_proxy_text">Proxy on 127.0.0.1:%1$d</string>
 </resources>

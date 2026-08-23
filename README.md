@@ -57,7 +57,7 @@ physical link → classifier → RuntimePlan
 | ---- | ----- |
 | 🧭 Agent rules (`.cursor/rules/`) | Bootstrapped |
 | 📋 MVP plan (`planning/phases/`) | Seeded — [INDEX](planning/phases/INDEX.md) T01–T10 |
-| 🛠️ Product code | VPN-only JNI client ships; dual-mode not built |
+| 🛠️ Product code | VPN JNI ships; libzt proxy stack on `127.0.0.1` (T05); Global HTTP_PROXY not wired (T06) |
 | 🧪 Verify | `make verify` (Android lint + unit tests + assembleDebug) |
 
 ## 📂 Repo layout
@@ -71,7 +71,7 @@ physical link → classifier → RuntimePlan
 | [`planning/phases/`](planning/phases/) | 🗂️ MVP sequence of record |
 | [`app/`](app/) | Android application |
 | [`core/`](core/) | ZeroTier JNI (`com.zerotier.sdk`) |
-| [`libzt/`](libzt/) | libzt tree (not wired into `:app` yet) |
+| [`libzt/`](libzt/) | libzt tree; `:app` links `libzt-release.aar` from `libzt/dist/` |
 | [`archive/proxy-mode` (git branch)](docs/PROXY-VPN-PLAN.md) | Old Pylon HTTP/SOCKS + libzt |
 
 ## 📚 Dependencies & docs

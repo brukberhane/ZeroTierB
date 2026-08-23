@@ -45,3 +45,27 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 | Other devices can use the phone as proxy | Bound `0.0.0.0` | `InetSocketAddress("127.0.0.1", 0)` |
 
 <!-- last-verified: 2026-08 -->
+
+### `Ephemeral bind port`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| UI/logs show port `0` after start | Archive returned ctor arg, not kernel-assigned port | After `bind`, expose `boundPort = serverSocket.localPort`; persist for system-proxy write (T06) |
+
+<!-- last-verified: 2026-08 -->
+
+### `Route priority tie-break`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Wrong ZT net chosen when two nets share same prefix length | Archive LPM had no tie-break | In `resolveIpString`, equal `prefixLength` → lower `routePriority` wins |
+
+<!-- last-verified: 2026-08 -->
+
+### `Proxy start while VPN up`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Dual stack / UDP fight / refused start | JNI node still running | Refuse proxy start when VPN `isRunning`; `EXTRA_FORCE_DEBUG` only for dev JNI→libzt spike |
+
+<!-- last-verified: 2026-08 -->

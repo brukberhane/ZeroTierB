@@ -12,6 +12,8 @@ class NetworkRepository(
 
     suspend fun getById(networkId: String): ZerotierBNetwork? = dao.getById(networkId)
 
+    suspend fun getAll(): List<ZerotierBNetwork> = dao.getAll()
+
     suspend fun upsert(network: ZerotierBNetwork) {
         val existing = dao.getById(network.networkId)
         val toSave = when {
