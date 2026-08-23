@@ -6,4 +6,6 @@ data class ProxyServiceState(
     val nodeId: String? = null,
     val statusMessage: String = "Stopped",
     val lastError: String? = null,
+    val systemProxyActive: Boolean = false,
+    val hasSecureSettingsPermission: Boolean = false,
 )

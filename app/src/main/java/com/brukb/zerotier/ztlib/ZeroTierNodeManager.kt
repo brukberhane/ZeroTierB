@@ -176,7 +176,7 @@ class ZeroTierNodeManager(
         _state.value = _state.value.copy(networks = networkStatuses.toMap())
     }
 
-    private val eventListener = ZeroTierEventListener { networkId, eventCode ->
+    private val eventListener = ZeroTierEventListener { id, eventCode ->
         when (eventCode) {
             ZeroTierNative.ZTS_EVENT_NODE_ONLINE -> {
                 _state.value = _state.value.copy(isOnline = true, nodeId = node.id)
@@ -196,17 +196,48 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_ADDR_ADDED_IP4,
             ZeroTierNative.ZTS_EVENT_ADDR_ADDED_IP6,
             -> {
-                refreshNetworkInfoAsync(networkId)
+                refreshNetworkInfoAsync(id)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_ACCESS_DENIED -> {
-                updateNetworkStatus(networkId, ZtNetworkStatus.Status.ACCESS_DENIED)
+                updateNetworkStatus(id, ZtNetworkStatus.Status.ACCESS_DENIED)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_NOT_FOUND -> {
-                updateNetworkStatus(networkId, ZtNetworkStatus.Status.NOT_FOUND)
+                updateNetworkStatus(id, ZtNetworkStatus.Status.NOT_FOUND)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_DOWN -> {
-                updateNetworkStatus(networkId, ZtNetworkStatus.Status.DOWN)
+                updateNetworkStatus(id, ZtNetworkStatus.Status.DOWN)
             }
+            ZeroTierNative.ZTS_EVENT_PEER_DIRECT,
+            ZeroTierNative.ZTS_EVENT_PEER_RELAY,
+            ZeroTierNative.ZTS_EVENT_PEER_UNREACHABLE,
+            ZeroTierNative.ZTS_EVENT_PEER_PATH_DISCOVERED,
+            ZeroTierNative.ZTS_EVENT_PEER_PATH_DEAD,
+            -> {
+                logPeerEvent(id, eventCode)
+            }
+        }
+    }
+
+    private fun logPeerEvent(peerId: Long, eventCode: Int) {
+        val kind = when (eventCode) {
+            ZeroTierNative.ZTS_EVENT_PEER_DIRECT -> "DIRECT"
+            ZeroTierNative.ZTS_EVENT_PEER_RELAY -> "RELAY"
+            ZeroTierNative.ZTS_EVENT_PEER_UNREACHABLE -> "UNREACHABLE"
+            ZeroTierNative.ZTS_EVENT_PEER_PATH_DISCOVERED -> "PATH_DISCOVERED"
+            ZeroTierNative.ZTS_EVENT_PEER_PATH_DEAD -> "PATH_DEAD"
+            else -> eventCode.toString()
+        }
+        Log.i(TAG, "peer $kind ${formatNodeId(peerId)}")
+        if (eventCode == ZeroTierNative.ZTS_EVENT_PEER_UNREACHABLE ||
+            eventCode == ZeroTierNative.ZTS_EVENT_PEER_PATH_DEAD
+        ) {
+            return
+        }
+        scope.launch {
+            runCatching {
+                val paths = ZtNetworkQuery.queryPathCount(peerId)
+                Log.i(TAG, "peer ${formatNodeId(peerId)} paths=$paths")
+            }.onFailure { Log.w(TAG, "path count failed for ${formatNodeId(peerId)}", it) }
         }
     }
 

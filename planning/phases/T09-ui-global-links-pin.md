@@ -92,3 +92,8 @@ Segmented OFF|PROXY|VPN|AUTO. Current link line. Pin Main chip. Links screen. Gr
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T06 close-out
+
+- Grant card must call `Shizuku.requestPermission` (or equivalent) before `ShizukuPermissionHelper.grantWriteSecureSettings` — helper alone fails if app not authorized in Shizuku.
+- Show `SystemProxyManager.adbGrantCommand(packageName)` as copyable fallback; display `ProxyServiceState.systemProxyActive` and `hasSecureSettingsPermission`.

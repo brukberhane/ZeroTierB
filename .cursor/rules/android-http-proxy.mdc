@@ -48,3 +48,11 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 | Proxy "on" in UI but Global unchanged | No `WRITE_SECURE_SETTINGS` | Shizuku or ADB grant; listen still; UI "system proxy inactive" |
 
 <!-- last-verified: 2026-08 -->
+
+### `hasPermission false positive`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `hasPermission()` true but `enable()` throws `SecurityException` | `Settings.Global.getString` does not throw without grant; archive try/catch on read always passed | `hasPermission`: no-op `putString(HTTP_PROXY, current)` round-trip; catch `SecurityException` |
+
+<!-- last-verified: 2026-08 -->

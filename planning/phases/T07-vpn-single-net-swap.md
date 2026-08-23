@@ -95,3 +95,12 @@ rebuildVpn() only main net; leave() others. Orchestrator swap PROXY↔VPN: disab
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T06 close-out
+
+- `com.brukb.zerotier.proxy.SystemProxyManager` — sole writer of `Settings.Global.HTTP_PROXY`; `enable(port)` / `disable()` / `hasPermission()` / `shouldClearStale(...)`.
+- `ProxyModeService` calls `enable(boundPort)` after listen; `disable()` first on stop. State: `systemProxyActive`, `hasSecureSettingsPermission`.
+- Shizuku 13.1.5 (`api` + `provider`); `ShizukuProvider` in manifest; grant via `ShizukuPermissionHelper.grantWriteSecureSettings` or ADB `pm grant`.
+- Stale-proxy clear on `ZerotierBApplication.onCreate` when mode ≠ PROXY — T07 orchestrator must call `disable()` on PROXY→VPN swap before stopping libzt (AC: "Swap does not leak HTTP_PROXY").
+- `GlobalMode.PROXY` not settable from UI yet (T09) — orchestrator in T07 should drive enable/disable from resolved runtime plan, not raw debug intents.
+- VPN mutex unchanged: proxy refuses when `ZerotierBVpnService.state.isRunning` unless `EXTRA_FORCE_DEBUG`.

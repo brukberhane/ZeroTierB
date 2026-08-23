@@ -59,4 +59,8 @@ object ZtNetworkQuery {
             }
         }
     }
+
+    fun queryPathCount(peerId: Long): Int = withCoreLock {
+        ZeroTierNative.zts_core_query_path_count(peerId)
+    }
 }

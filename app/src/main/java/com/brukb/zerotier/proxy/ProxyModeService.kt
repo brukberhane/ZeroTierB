@@ -37,9 +37,11 @@ class ProxyModeService : Service() {
     private lateinit var nodeManager: ZeroTierNodeManager
     private lateinit var routeResolver: RouteResolver
     private lateinit var dnsResolver: DnsResolver
+    private lateinit var systemProxyManager: SystemProxyManager
     private val networkConfigs = mutableMapOf<Long, ZerotierBNetwork>()
     private var httpProxy: HttpProxyServer? = null
     private var nodeStarted = false
+    private var networkStateJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +49,10 @@ class ProxyModeService : Service() {
         routeResolver = RouteResolver()
         dnsResolver = DnsResolver()
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
+        systemProxyManager = SystemProxyManager(this, (application as ZerotierBApplication).preferences)
+        scope.launch {
+            updateState { copy(hasSecureSettingsPermission = systemProxyManager.hasPermission()) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -120,6 +126,17 @@ class ProxyModeService : Service() {
             joinConfiguredNetwork(network)
         }
 
+        networkStateJob = scope.launch {
+            nodeManager.state.collect { nodeState ->
+                for ((networkId, status) in nodeState.networks) {
+                    val config = networkConfigs[networkId] ?: continue
+                    if (status.status == ZtNetworkStatus.Status.OK) {
+                        applyNetworkRuntime(config, status)
+                    }
+                }
+            }
+        }
+
         httpProxy = HttpProxyServer(0, routeResolver, dnsResolver).also { it.start() }
         val boundPort = httpProxy?.boundPort ?: -1
         if (boundPort <= 0) {
@@ -135,6 +152,17 @@ class ProxyModeService : Service() {
             )
         }
         Log.i(TAG, "HTTP proxy on 127.0.0.1:$boundPort")
+
+        systemProxyManager.enable(boundPort)
+            .onSuccess {
+                updateState { copy(systemProxyActive = true, hasSecureSettingsPermission = true) }
+                Log.i(TAG, "System proxy set to 127.0.0.1:$boundPort")
+            }
+            .onFailure {
+                updateState { copy(systemProxyActive = false) }
+                Log.w(TAG, "System proxy not set: ${it.message}")
+            }
+
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, buildNotification(boundPort))
     }
@@ -157,6 +185,10 @@ class ProxyModeService : Service() {
     }
 
     private fun applyNetworkRuntime(network: ZerotierBNetwork, status: ZtNetworkStatus) {
+        Log.i(
+            TAG,
+            "routes ${network.networkId}: assigned=${status.assignedAddresses} managed=${status.routes}",
+        )
         routeResolver.updateNetwork(network, status)
         if (network.allowDns) {
             dnsResolver.updateNetwork(network, status)
@@ -167,6 +199,11 @@ class ProxyModeService : Service() {
 
     private suspend fun stopProxy() {
         updateState { copy(statusMessage = "Stopping...") }
+        systemProxyManager.disable().onFailure {
+            Log.w(TAG, "Failed to restore system proxy: ${it.message}")
+        }
+        networkStateJob?.cancel()
+        networkStateJob = null
         httpProxy?.stop()
         httpProxy = null
         for (network in networkConfigs.values.toList()) {
@@ -180,7 +217,7 @@ class ProxyModeService : Service() {
         dnsResolver.clear()
         networkConfigs.clear()
         stopForeground(STOP_FOREGROUND_REMOVE)
-        updateState { ProxyServiceState() }
+        updateState { ProxyServiceState(hasSecureSettingsPermission = systemProxyManager.hasPermission()) }
         stopSelf()
     }
 

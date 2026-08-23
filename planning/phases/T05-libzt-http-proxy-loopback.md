@@ -195,13 +195,12 @@ Restore archive proxy server + RouteResolver (no blockOutside). Bind 127.0.0.1:0
 make verify
 ./gradlew :app:installDebug
 
-# Start proxy (VPN must be off)
-adb shell am start-foreground-service \
-  -n com.brukb.zerotier/com.brukb.zerotier.proxy.ProxyModeService \
-  -a com.brukb.zerotier.proxy.START
+# Start proxy via exported activity (service is not exported)
+adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
+  --es zerotierb_action start_proxy
 
-# Port from logcat
-adb logcat -d -s ProxyModeService | tail -5
+# Broader logcat if proxy fails early
+adb logcat -d -s MainActivity ProxyModeService ZeroTierNodeManager | tail -30
 # Expect: "HTTP proxy on 127.0.0.1:<PORT>"
 
 # Termux on device — ZT HTTP target (replace PORT + ZT host)
@@ -212,9 +211,8 @@ curl -v --connect-timeout 3 --proxy PHONE_LAN_IP:PORT http://example.com/
 # Expect: connection refused / timeout — not reachable off-loopback
 
 # Stop
-adb shell am startservice \
-  -n com.brukb.zerotier/com.brukb.zerotier.proxy.ProxyModeService \
-  -a com.brukb.zerotier.proxy.STOP
+adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
+  --es zerotierb_action stop_proxy
 ```
 
 **Success:** logcat shows node online + loopback port; Termux curl reaches ZT HTTP via `127.0.0.1:PORT`; LAN IP proxy fails. Notification shows proxy port.

@@ -6,6 +6,7 @@ import com.brukb.zerotier.proxy.ProxyConnection
 import com.brukb.zerotier.proxy.RouteDecision
 import com.brukb.zerotier.proxy.RouteResolver
 import com.brukb.zerotier.proxy.dns.DnsResolver
+import com.zerotier.sockets.ZeroTierNative
 import com.zerotier.sockets.ZeroTierSocket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +100,14 @@ class HttpProxySession(
     private fun handleConnect(target: String) {
         val (host, port) = parseHostPort(target, 443)
         val decision = resolveDecision(host)
-        val remote = openConnection(host, port, decision)
+        logRoute(host, port, decision)
+        val remote = try {
+            openConnection(host, port, decision)
+        } catch (e: Exception) {
+            Log.w(TAG, "connect failed $host:$port", e)
+            writeResponse(client.getOutputStream(), 502, "Bad Gateway")
+            return
+        }
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
         relay(client, remote)
     }
@@ -110,7 +118,14 @@ class HttpProxySession(
         val port = if (url.port > 0) url.port else 80
         val path = url.path.ifEmpty { "/" } + (url.query?.let { "?$it" } ?: "")
         val decision = resolveDecision(host)
-        val remote = openConnection(host, port, decision)
+        logRoute(host, port, decision)
+        val remote = try {
+            openConnection(host, port, decision)
+        } catch (e: Exception) {
+            Log.w(TAG, "connect failed $host:$port", e)
+            writeResponse(client.getOutputStream(), 502, "Bad Gateway")
+            return
+        }
         val output = remote.output
         output.write("$method $path HTTP/1.1\r\n".toByteArray())
         var line: String?
@@ -134,6 +149,10 @@ class HttpProxySession(
 
     private fun openConnection(host: String, port: Int, decision: RouteDecision): ProxyConnection {
         return if (decision.useZeroTier) {
+            val netId = decision.networkId ?: 0L
+            val online = ZeroTierNative.zts_node_is_online()
+            val ready = if (netId != 0L) ZeroTierNative.zts_net_transport_is_ready(netId) else -1
+            Log.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
             ProxyConnection.fromZeroTierSocket(ZeroTierSocket(host, port))
         } else {
             val socket = Socket()
@@ -191,5 +210,28 @@ class HttpProxySession(
     private fun writeRaw(output: OutputStream, text: String) {
         output.write(text.toByteArray())
         output.flush()
+    }
+
+    private fun writeResponse(output: OutputStream, code: Int, message: String) {
+        val body = message
+        writeRaw(
+            output,
+            "HTTP/1.1 $code $message\r\n" +
+                "Content-Length: ${body.length}\r\n" +
+                "Connection: close\r\n\r\n$body",
+        )
+    }
+
+    private fun logRoute(host: String, port: Int, decision: RouteDecision) {
+        Log.i(
+            TAG,
+            "route $host:$port -> useZeroTier=${decision.useZeroTier} " +
+                "net=${decision.networkId?.let { java.lang.Long.toUnsignedString(it, 16) }} " +
+                "reason=${decision.reason}",
+        )
+    }
+
+    companion object {
+        private const val TAG = "HttpProxySession"
     }
 }

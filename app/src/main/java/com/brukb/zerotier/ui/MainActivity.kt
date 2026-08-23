@@ -4,11 +4,14 @@ import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brukb.zerotier.proxy.ProxyModeService
+import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 
 class MainActivity : ComponentActivity() {
@@ -26,6 +29,34 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainScreen(viewModel = viewModel())
         }
+        handleDebugIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDebugIntent(intent)
+    }
+
+    private fun handleDebugIntent(intent: Intent?) {
+        when (intent?.getStringExtra(EXTRA_DEBUG_ACTION)) {
+            ACTION_START_PROXY -> {
+                Log.i(TAG, "adb debug: starting proxy")
+                ProxyModeService.start(this)
+            }
+            ACTION_STOP_PROXY -> {
+                Log.i(TAG, "adb debug: stopping proxy")
+                ProxyModeService.stop(this)
+            }
+            ACTION_GRANT_SECURE -> {
+                Log.i(TAG, "adb debug: Shizuku grant WRITE_SECURE_SETTINGS")
+                val result = ShizukuPermissionHelper.grantWriteSecureSettings(this)
+                Log.i(
+                    TAG,
+                    if (result.isSuccess) "grant ok" else "grant failed: ${result.exceptionOrNull()?.message}",
+                )
+            }
+        }
     }
 
     fun requestVpnAndStart() {
@@ -35,5 +66,13 @@ class MainActivity : ComponentActivity() {
         } else {
             ZerotierBVpnService.start(this)
         }
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
+        const val EXTRA_DEBUG_ACTION = "zerotierb_action"
+        const val ACTION_START_PROXY = "start_proxy"
+        const val ACTION_STOP_PROXY = "stop_proxy"
+        const val ACTION_GRANT_SECURE = "grant_secure_settings"
     }
 }

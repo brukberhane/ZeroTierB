@@ -13,7 +13,7 @@
 | T03 | [RuntimePlan resolver (pure)](./T03-runtime-plan-resolver.md) | ✅ | T02 | T04 | L3 | |
 | T04 | [Link classifier + debounce](./T04-link-classifier-debounce.md) | ✅ | T03 | T05 | L3 | |
 | T05 | [libzt HTTP proxy on 127.0.0.1](./T05-libzt-http-proxy-loopback.md) | ✅ | T04 | T06 | L4 | |
-| T06 | [System HTTP_PROXY + Shizuku grant](./T06-system-proxy-shizuku.md) | Pending | T05 | T07 | L5 | |
+| T06 | [System HTTP_PROXY + Shizuku grant](./T06-system-proxy-shizuku.md) | ✅ | T05 | T07 | L5 | |
 | T07 | [VPN single-net + exclusive stack swap](./T07-vpn-single-net-swap.md) | Pending | T06 | T08 | L6 | |
 | T08 | [AUTO physical-link observer](./T08-auto-link-observer.md) | Pending | T07 | T09 | L6 | |
 | T09 | [UI: global mode, Links, pin Main](./T09-ui-global-links-pin.md) | Pending | T08 | T10 | L7 | |
