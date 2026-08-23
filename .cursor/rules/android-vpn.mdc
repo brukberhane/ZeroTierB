@@ -43,7 +43,15 @@ Does **not** cover: JNI Node lifecycle details (zerotier-jni), orchestrator mute
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Second ZT net still on TUN | `rebuildVpn()` still walks all OK configs | Filter to orchestrator `vpnNetworkId`; `leave()` others on Node |
+| Second ZT net still on TUN | `rebuildVpn()` still walks all OK configs | Orchestrator passes `EXTRA_SINGLE_NETWORK_ID`; `leave()` non-main on JNI node; filter `rebuildVpn()` |
+
+<!-- last-verified: 2026-08 -->
+
+### `Orchestrator swap before VPN dead`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| libzt start fails / UDP fight after VPN stop intent | `stopSelf()` async; orchestrator did not wait | `ZerotierBVpnService.stopAndAwait()` until `state.isRunning` false |
 
 <!-- last-verified: 2026-08 -->
 

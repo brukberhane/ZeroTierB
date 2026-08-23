@@ -35,10 +35,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -78,6 +80,8 @@ class ZerotierBVpnService :
     private var drainingBackground = false
     private var startId = -1
     private val rebuildMutex = Mutex()
+    @Volatile
+    private var allowedVpnNetworkId: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -100,6 +104,8 @@ class ZerotierBVpnService :
                 return START_STICKY
             }
         }
+
+        intent?.getStringExtra(EXTRA_SINGLE_NETWORK_ID)?.let { allowedVpnNetworkId = it }
 
         startForegroundCompat(buildNotification("Starting VPN"))
         synchronized(this) {
@@ -382,16 +388,45 @@ class ZerotierBVpnService :
     private fun refreshJoinedNetworks() {
         scope.launch {
             val enabled = app().database.networkDao().getAll().filter { it.isEnabled }
-            networkSettings.clear()
-            enabled.forEach { network ->
-                networkSettings[network.networkIdLong()] = network
-                writeNetworkLocalSettings(network)
-                joinNetworkInternal(network.networkIdLong())
+            val singleId = allowedVpnNetworkId
+            if (singleId != null) {
+                val normalized = ZerotierBNetwork.normalizeNetworkId(singleId)
+                val mainIdLong = ZerotierBNetwork.parseNetworkIdLong(normalized)
+                enabled.forEach { network ->
+                    val id = network.networkIdLong()
+                    if (id != mainIdLong) {
+                        node?.leave(id)
+                        packetScheduler?.unregisterNetwork(id)
+                        virtualNetworkConfigs.remove(id)
+                    }
+                }
+                networkSettings.clear()
+                enabled
+                    .filter { ZerotierBNetwork.normalizeNetworkId(it.networkId) == normalized }
+                    .forEach { network ->
+                        networkSettings[network.networkIdLong()] = network
+                        writeNetworkLocalSettings(network)
+                        joinNetworkInternal(network.networkIdLong())
+                    }
+            } else {
+                networkSettings.clear()
+                enabled.forEach { network ->
+                    networkSettings[network.networkIdLong()] = network
+                    writeNetworkLocalSettings(network)
+                    joinNetworkInternal(network.networkIdLong())
+                }
             }
         }
     }
 
     private fun joinNetwork(networkIdHex: String) {
+        val normalized = ZerotierBNetwork.normalizeNetworkId(networkIdHex)
+        allowedVpnNetworkId?.let { allowed ->
+            if (ZerotierBNetwork.normalizeNetworkId(allowed) != normalized) {
+                Log.i(TAG, "skip join $normalized — single-net VPN is ${ZerotierBNetwork.normalizeNetworkId(allowed)}")
+                return
+            }
+        }
         scope.launch {
             val network = app().networkRepository.getById(
                 ZerotierBNetwork.normalizeNetworkId(networkIdHex),
@@ -440,7 +475,10 @@ class ZerotierBVpnService :
         }
         adapter.clearRouteMap()
 
+        val allowedIdLong = allowedVpnNetworkId?.let { ZerotierBNetwork.parseNetworkIdLong(it) }
         val enabledIds = networkSettings.keys.toSet()
+            .filter { allowedIdLong == null || it == allowedIdLong }
+            .toSet()
         val activeConfigs = virtualNetworkConfigs.filterKeys { it in enabledIds }
         if (activeConfigs.isEmpty()) return@withLock
 
@@ -734,6 +772,7 @@ class ZerotierBVpnService :
         const val ACTION_JOIN = "com.brukb.zerotier.vpn.JOIN"
         const val ACTION_LEAVE = "com.brukb.zerotier.vpn.LEAVE"
         const val EXTRA_NETWORK_ID = "network_id"
+        const val EXTRA_SINGLE_NETWORK_ID = "single_network_id"
 
         private val _state = MutableStateFlow(VpnServiceState())
         val state: StateFlow<VpnServiceState> = _state.asStateFlow()
@@ -742,8 +781,10 @@ class ZerotierBVpnService :
         var lastUnderlyingNetworkHandle: Long? = null
             private set
 
-        fun start(context: Context) {
-            val intent = Intent(context, ZerotierBVpnService::class.java)
+        fun start(context: Context, singleNetworkId: String? = null) {
+            val intent = Intent(context, ZerotierBVpnService::class.java).apply {
+                singleNetworkId?.let { putExtra(EXTRA_SINGLE_NETWORK_ID, it) }
+            }
             context.startForegroundService(intent)
         }
 
@@ -752,6 +793,17 @@ class ZerotierBVpnService :
                 action = ACTION_STOP
             }
             context.startService(intent)
+        }
+
+        suspend fun stopAndAwait(context: Context, timeoutMs: Long = 10_000) {
+            if (!state.value.isRunning) return
+            stop(context)
+            val stopped = withTimeoutOrNull(timeoutMs) {
+                state.first { !it.isRunning }
+            }
+            if (stopped == null) {
+                Log.w(TAG, "VPN stop timed out after ${timeoutMs}ms")
+            }
         }
 
         fun joinNetwork(context: Context, networkId: String) {

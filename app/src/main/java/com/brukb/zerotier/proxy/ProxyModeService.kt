@@ -28,7 +28,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class ProxyModeService : Service() {
     private val serviceJob = SupervisorJob()
@@ -57,7 +59,10 @@ class ProxyModeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> scope.launch { startProxy(intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false)) }
+            ACTION_START -> scope.launch {
+                val joinIds = intent.getStringArrayExtra(EXTRA_JOIN_NETWORK_IDS)?.toList()
+                startProxy(intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false), joinIds)
+            }
             ACTION_STOP -> scope.launch { stopProxy() }
         }
         return START_STICKY
@@ -76,7 +81,7 @@ class ProxyModeService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun startProxy(forceDebug: Boolean) {
+    private suspend fun startProxy(forceDebug: Boolean, joinNetworkIds: List<String>? = null) {
         if (_state.value.isRunning) return
         if (ZerotierBVpnService.state.value.isRunning && !forceDebug) {
             updateState {
@@ -93,7 +98,11 @@ class ProxyModeService : Service() {
         startForegroundCompat(buildNotification(0))
 
         val app = application as ZerotierBApplication
-        val enabledNetworks = app.networkRepository.getAll().filter { it.isEnabled }
+        var enabledNetworks = app.networkRepository.getAll().filter { it.isEnabled }
+        if (joinNetworkIds != null) {
+            val allowed = joinNetworkIds.map { ZerotierBNetwork.normalizeNetworkId(it) }.toSet()
+            enabledNetworks = enabledNetworks.filter { it.networkId in allowed }
+        }
         if (enabledNetworks.isEmpty()) {
             fail("No enabled networks configured")
             return
@@ -288,14 +297,16 @@ class ProxyModeService : Service() {
         const val ACTION_START = "com.brukb.zerotier.proxy.START"
         const val ACTION_STOP = "com.brukb.zerotier.proxy.STOP"
         const val EXTRA_FORCE_DEBUG = "force_debug"
+        const val EXTRA_JOIN_NETWORK_IDS = "join_network_ids"
 
         private val _state = MutableStateFlow(ProxyServiceState())
         val state: StateFlow<ProxyServiceState> = _state.asStateFlow()
 
-        fun start(context: Context, forceDebug: Boolean = false) {
+        fun start(context: Context, forceDebug: Boolean = false, joinNetworkIds: List<String>? = null) {
             val intent = Intent(context, ProxyModeService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_FORCE_DEBUG, forceDebug)
+                joinNetworkIds?.let { putExtra(EXTRA_JOIN_NETWORK_IDS, it.toTypedArray()) }
             }
             context.startForegroundService(intent)
         }
@@ -305,6 +316,17 @@ class ProxyModeService : Service() {
                 action = ACTION_STOP
             }
             context.startService(intent)
+        }
+
+        suspend fun stopAndAwait(context: Context, timeoutMs: Long = 10_000) {
+            if (!state.value.isRunning) return
+            stop(context)
+            val stopped = withTimeoutOrNull(timeoutMs) {
+                state.first { !it.isRunning }
+            }
+            if (stopped == null) {
+                Log.w(TAG, "Proxy stop timed out after ${timeoutMs}ms")
+            }
         }
     }
 }

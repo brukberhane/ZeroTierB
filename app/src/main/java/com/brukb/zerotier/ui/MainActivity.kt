@@ -9,10 +9,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.vpn.ZerotierBVpnService
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vpnConsentLauncher = registerForActivityResult(
@@ -56,6 +60,20 @@ class MainActivity : ComponentActivity() {
                     if (result.isSuccess) "grant ok" else "grant failed: ${result.exceptionOrNull()?.message}",
                 )
             }
+            ACTION_APPLY_MODE -> {
+                val raw = intent.getStringExtra(EXTRA_MODE)
+                val mode = GlobalMode.parse(raw)
+                Log.i(TAG, "adb debug: apply mode=$mode")
+                lifecycleScope.launch {
+                    (application as ZerotierBApplication).orchestrator.applyGlobalMode(mode)
+                }
+            }
+            ACTION_STOP_ALL -> {
+                Log.i(TAG, "adb debug: stop all")
+                lifecycleScope.launch {
+                    (application as ZerotierBApplication).orchestrator.stopAll()
+                }
+            }
         }
     }
 
@@ -74,5 +92,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_START_PROXY = "start_proxy"
         const val ACTION_STOP_PROXY = "stop_proxy"
         const val ACTION_GRANT_SECURE = "grant_secure_settings"
+        const val ACTION_APPLY_MODE = "apply_mode"
+        const val EXTRA_MODE = "mode"
+        const val ACTION_STOP_ALL = "stop_all"
     }
 }

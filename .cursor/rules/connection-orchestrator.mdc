@@ -10,7 +10,7 @@ alwaysApply: false
 
 - Global mode `OFF | PROXY | VPN | AUTO` vs link chips `OFF | PROXY | VPN`
 - Resolving `RuntimePlan` (which stack, which ZT nets) — pure `RuntimePlanResolver` in `connection/`
-- Exclusive start/stop of libzt vs JNI (later tasks)
+- Exclusive start/stop of libzt vs JNI via `ConnectionOrchestrator`
 - Main ZeroTier network: `MainNetworkSelector` (`isPinnedMain` else oldest `createdAt`)
 
 Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vpn), HTTP bind (android-http-proxy).
@@ -45,7 +45,31 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Same node ID, two paths, peers confused | libzt and JNI both opened `identity.secret` | Mutex; wait UDP/lock files gone; never two processes on same identity |
+| Same node ID, two paths, peers confused | libzt and JNI both opened `identity.secret` | Mutex; `stopAndAwait()` until peer service `isRunning` false; never two live nodes |
+
+<!-- last-verified: 2026-08 -->
+
+### `HTTP_PROXY survives PROXY→VPN swap`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Global still loopback after VPN up | Stopped proxy before `disable()` | `SystemProxyManager.disable()` then `ProxyModeService.stopAndAwait()` |
+
+<!-- last-verified: 2026-08 -->
+
+### `Stack swap races`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Orchestrator starts JNI while libzt still up | Service `shutdown()` has no completion callback | Companion `stopAndAwait()` polls `StateFlow.isRunning` (10s timeout) |
+
+<!-- last-verified: 2026-08 -->
+
+### `Equal plan re-swap`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| AUTO WiFi A PROXY → WiFi B PROXY triggers stack churn | Re-applied identical `RuntimePlan` | `if (plan == lastApplied) return` before stop/start |
 
 <!-- last-verified: 2026-08 -->
 

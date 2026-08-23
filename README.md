@@ -57,7 +57,7 @@ physical link → classifier → RuntimePlan
 | ---- | ----- |
 | 🧭 Agent rules (`.cursor/rules/`) | Bootstrapped |
 | 📋 MVP plan (`planning/phases/`) | Seeded — [INDEX](planning/phases/INDEX.md) T01–T10 |
-| 🛠️ Product code | VPN JNI ships; libzt proxy on `127.0.0.1` (T05); Global `HTTP_PROXY` + Shizuku grant (T06); orchestrator swap pending (T07) |
+| 🛠️ Product code | VPN JNI ships; libzt proxy + Global `HTTP_PROXY` (T05–T06); `ConnectionOrchestrator` exclusive swap + single-net VPN (T07); AUTO observer pending (T08) |
 | 🧪 Verify | `make verify` (Android lint + unit tests + assembleDebug) |
 
 ## 📂 Repo layout

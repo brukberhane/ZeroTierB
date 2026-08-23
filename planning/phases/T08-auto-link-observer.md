@@ -92,3 +92,11 @@ NetworkCallback + SubscriptionManager upsert. AUTO applies classifier + debounce
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T07 close-out
+
+- `ZerotierBApplication.orchestrator` exists — T08 debounce callback should call `orchestrator.refresh()` (not start services directly).
+- `ConnectionOrchestrator.applyGlobalMode(GlobalMode)` sets prefs then `refresh()`; AUTO observer only needs link changes → `refresh()`.
+- `lastApplied == plan` skip already in orchestrator — T08 debounce should not bypass this.
+- VPN consent: orchestrator read-only `VpnService.prepare()`; missing consent → PROXY fallback + `vpnConsentMissing` in plan (T09 UI).
+- Debug `apply_mode` intents on `MainActivity` remain for manual testing until T09.

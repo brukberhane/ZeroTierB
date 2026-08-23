@@ -93,7 +93,8 @@ Segmented OFF|PROXY|VPN|AUTO. Current link line. Pin Main chip. Links screen. Gr
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
 
-### From T06 close-out
+### From T07 close-out
 
-- Grant card must call `Shizuku.requestPermission` (or equivalent) before `ShizukuPermissionHelper.grantWriteSecureSettings` — helper alone fails if app not authorized in Shizuku.
-- Show `SystemProxyManager.adbGrantCommand(packageName)` as copyable fallback; display `ProxyServiceState.systemProxyActive` and `hasSecureSettingsPermission`.
+- Mode chips / global selector should call `orchestrator.applyGlobalMode(...)` and `orchestrator.refresh()` — not raw `ProxyModeService` / `ZerotierBVpnService` starts.
+- `ConnectionOrchestrator` owns PROXY↔VPN swap order (Global disable before proxy stop).
+- Status UI can observe `ProxyModeService.state` and `ZerotierBVpnService.state` plus orchestrator plan fields when exposed (T09+).

@@ -2,6 +2,7 @@ package com.brukb.zerotier
 
 import android.app.Application
 import android.util.Log
+import com.brukb.zerotier.connection.ConnectionOrchestrator
 import com.brukb.zerotier.data.AppDatabase
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
@@ -27,6 +28,9 @@ class ZerotierBApplication : Application() {
     lateinit var preferences: AppPreferences
         private set
 
+    lateinit var orchestrator: ConnectionOrchestrator
+        private set
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -35,6 +39,13 @@ class ZerotierBApplication : Application() {
         networkRepository = NetworkRepository(database.networkDao())
         linkProfileRepository = LinkProfileRepository(database.linkProfileDao())
         preferences = AppPreferences(this)
+        orchestrator = ConnectionOrchestrator(
+            context = this,
+            preferences = preferences,
+            networkRepository = networkRepository,
+            linkProfileRepository = linkProfileRepository,
+            scope = appScope,
+        )
         appScope.launch {
             networkRepository.migrateStoredNetworkIds()
             preferences.migrateGlobalModeIfNeeded()
