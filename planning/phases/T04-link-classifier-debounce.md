@@ -93,3 +93,10 @@ Classify physical Network (strip our VPN). Wi-Fi SSID normalize; unknown → PRO
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T03 close-out
+
+- Emit `com.brukb.zerotier.connection.PhysicalLink` (WifiKnown/WifiUnknown/Mobile/Other/None) with `LinkMode` already resolved from profiles.
+- Unknown Wi‑Fi → `PhysicalLink.WifiUnknown` (implicit PROXY in resolver) — **do not** insert `LinkProfile`.
+- No uplink → `PhysicalLink.None` → AUTO resolves OFF.
+- Classifier may stay Android-facing; feed already-built `PhysicalLink` into `RuntimePlanResolver` later (orchestrator). Do not put `Context` into resolve.

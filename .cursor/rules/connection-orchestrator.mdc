@@ -9,9 +9,9 @@ alwaysApply: false
 ## Scope
 
 - Global mode `OFF | PROXY | VPN | AUTO` vs link chips `OFF | PROXY | VPN`
-- Resolving `RuntimePlan` (which stack, which ZT nets)
-- Exclusive start/stop of libzt vs JNI
-- Main ZeroTier network: `isPinnedMain` else oldest `createdAt` among enabled
+- Resolving `RuntimePlan` (which stack, which ZT nets) — pure `RuntimePlanResolver` in `connection/`
+- Exclusive start/stop of libzt vs JNI (later tasks)
+- Main ZeroTier network: `MainNetworkSelector` (`isPinnedMain` else oldest `createdAt`)
 
 Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vpn), HTTP bind (android-http-proxy).
 
@@ -20,8 +20,10 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 1. At most one ZeroTier node is live. Swap = stop A, wait dead, start B.
 2. PROXY joins every `isEnabled` ZT network. VPN joins **only** main; `leave()` all others.
 3. AUTO with no uplink → runtime OFF. Global PROXY/VPN ignore link and stay requested.
-4. Missing VPN consent: do not background-prompt. Stay PROXY or OFF + notification.
-5. `ZerotierBNetwork` has no PROXY/VPN chip.
+4. Missing VPN consent: do not background-prompt. Wanted VPN + consent false → PROXY if enabled nets nonempty else OFF; set `vpnConsentMissing = true`.
+5. `vpnNetworkId` set **iff** `runtime == VPN` (null on consent fallback / OFF).
+6. Resolver inputs are already-classified `PhysicalLink` + `Boolean` consent — no `Context` / `Network` in resolve.
+7. `ZerotierBNetwork` has no PROXY/VPN chip.
 
 ## External docs
 
@@ -44,5 +46,13 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | Same node ID, two paths, peers confused | libzt and JNI both opened `identity.secret` | Mutex; wait UDP/lock files gone; never two processes on same identity |
+
+<!-- last-verified: 2026-08 -->
+
+### `Consent fallback still carries vpnNetworkId`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| UI/services act on VPN id while runtime is PROXY | Consent path set `vpnNetworkId` before downgrade | Set `vpnNetworkId` only when `runtime == VPN` |
 
 <!-- last-verified: 2026-08 -->
