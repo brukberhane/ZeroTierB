@@ -97,4 +97,11 @@ Segmented OFF|PROXY|VPN|AUTO. Current link line. Pin Main chip. Links screen. Gr
 
 - Mode chips / global selector should call `orchestrator.applyGlobalMode(...)` and `orchestrator.refresh()` — not raw `ProxyModeService` / `ZerotierBVpnService` starts.
 - `ConnectionOrchestrator` owns PROXY↔VPN swap order (Global disable before proxy stop).
-- Status UI can observe `ProxyModeService.state` and `ZerotierBVpnService.state` plus orchestrator plan fields when exposed (T09+).
+- Status UI can observe `ProxyModeService.state`, `ZerotierBVpnService.state`, `orchestrator.state` (`plan`, `lastLink`, `lastError`).
+
+### From T08 close-out
+
+- `LinkObserver` already running when mode ≠ OFF — T09 mode changes to AUTO/PROXY/VPN auto-register; no duplicate observer needed.
+- Save SSID: call `linkProfileRepository.upsertWifi(ssid)` with SSID from `orchestrator.state.lastLink` when `WifiKnown` or after user confirms unknown→known; read `lastLink` from orchestrator state.
+- Location runtime request on AUTO or Links screen (manifest already declares FINE/COARSE ≤32 + NEARBY_WIFI_DEVICES).
+- Debug intents: use `com.brukb.zerotier.DEBUG` action + `-f 0x20000000` (`singleTop`).

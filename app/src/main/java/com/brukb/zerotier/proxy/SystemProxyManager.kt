@@ -33,7 +33,11 @@ class SystemProxyManager(
             savedProxy = toSave
             preferences.setSavedHttpProxy(toSave)
         } else {
-            savedProxy = preferences.savedHttpProxy.first()
+            val existing = preferences.savedHttpProxy.first()
+            savedProxy = existing?.takeUnless { isLoopbackProxy(it) }
+            if (savedProxy == null) {
+                preferences.setSavedHttpProxy(null)
+            }
         }
         Settings.Global.putString(
             context.contentResolver,
@@ -68,11 +72,20 @@ class SystemProxyManager(
         fun adbGrantCommand(packageName: String): String =
             "adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"
 
+        private val LOOPBACK_PROXY = Regex("^127\\.0\\.0\\.1:\\d+$")
+
+        fun isLoopbackProxy(value: String?): Boolean =
+            value != null && LOOPBACK_PROXY.matches(value)
+
         fun decideValueToSaveOnEnable(current: String?, port: Int): String? =
-            if (!current.isNullOrBlank() && current != loopbackProxy(port)) current else null
+            if (!current.isNullOrBlank() && current != ":0" && !isLoopbackProxy(current)) {
+                current
+            } else {
+                null
+            }
 
         fun decideRestoreOnDisable(saved: String?): String =
-            if (saved.isNullOrBlank() || saved == ":0") ":0" else saved
+            if (saved.isNullOrBlank() || saved == ":0" || isLoopbackProxy(saved)) ":0" else saved
 
         fun isOurLoopback(current: String?, lastPort: Int): Boolean =
             lastPort > 0 && current == loopbackProxy(lastPort)
@@ -83,6 +96,6 @@ class SystemProxyManager(
             lastPort: Int,
             proxyModeActive: Boolean,
         ): Boolean =
-            !proxyModeActive && (isOurLoopback(current, lastPort) || !saved.isNullOrBlank())
+            !proxyModeActive && (isLoopbackProxy(current) || isOurLoopback(current, lastPort) || !saved.isNullOrBlank())
     }
 }

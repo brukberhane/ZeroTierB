@@ -285,18 +285,20 @@ make verify
 # Grant secure settings (optional, for Global proxy check)
 adb shell pm grant com.brukb.zerotier android.permission.WRITE_SECURE_SETTINGS
 
+# Must use DEBUG action + SINGLE_TOP (0x20000000). Plain MAIN `am start`
+# is dropped when MainActivity is already on top (Samsung: "intent delivered").
+DEBUG='am start -a com.brukb.zerotier.DEBUG -n com.brukb.zerotier/.ui.MainActivity -f 0x20000000'
+
 # PROXY via orchestrator (all enabled nets)
-adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
-  --es zerotierb_action apply_mode --es mode PROXY
+adb shell $DEBUG --es zerotierb_action apply_mode --es mode PROXY
 adb logcat -d -s ConnectionOrchestrator ProxyModeService | tail -10
 # Expect: proxy running; "System proxy set" if granted
 
 adb shell settings get global http_proxy
 # Expect: 127.0.0.1:<PORT> when granted
 
-# VPN via orchestrator (main net only)
-adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
-  --es zerotierb_action apply_mode --es mode VPN
+# VPN via orchestrator (main net only) — consent dialog if not yet granted
+adb shell $DEBUG --es zerotierb_action apply_mode --es mode VPN
 adb logcat -d -s ConnectionOrchestrator ZerotierBVpnService | tail -15
 # Expect: only main net joined; rebuildVpn status "VPN active (1 networks)"
 
@@ -304,8 +306,7 @@ adb shell settings get global http_proxy
 # Expect: :0 or prior user proxy (not our loopback)
 
 # Stop everything
-adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
-  --es zerotierb_action stop_all
+adb shell $DEBUG --es zerotierb_action stop_all
 ```
 
 **Success:** PROXY→VPN swap clears Global proxy; VPN TUN shows one network; PROXY and VPN never both `isRunning`.
@@ -317,7 +318,7 @@ adb shell am start -n com.brukb.zerotier/.ui.MainActivity \
 - `stopAndAwait()` polls service `StateFlow.isRunning` (10s timeout); no custom callback needed.
 - `EXTRA_SINGLE_NETWORK_ID` on VPN start; legacy `start()` without extra still joins all enabled (BootReceiver compat).
 - `VpnService.prepare()` in orchestrator is read-only consent check — never prompts from background.
-- Debug intents: `apply_mode` + `mode=PROXY|VPN|OFF|AUTO`, `stop_all`.
+- Debug intents: `apply_mode` + `mode=PROXY|VPN|OFF|AUTO`, `stop_all`. ADB must use action `com.brukb.zerotier.DEBUG` + `-f 0x20000000` (`singleTop`); launcher `MAIN` extras are dropped when activity already on top.
 
 ## Reality notes
 

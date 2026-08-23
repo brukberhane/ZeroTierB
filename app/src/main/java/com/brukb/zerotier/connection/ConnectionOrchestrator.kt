@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.withLock
 
 data class OrchestratorState(
     val plan: RuntimePlan? = null,
+    val lastLink: PhysicalLink? = null,
     val isApplying: Boolean = false,
     val lastError: String? = null,
 )
@@ -44,6 +45,7 @@ class ConnectionOrchestrator(
         val globalMode = preferences.globalMode.first()
         val enabled = networkRepository.getAll().filter { it.isEnabled }
         val link = classifyLink()
+        _state.value = _state.value.copy(lastLink = link)
         val vpnConsentGranted = VpnService.prepare(context) == null
         val plan = RuntimePlanResolver.resolve(globalMode, link, vpnConsentGranted, enabled)
         applyPlan(plan)
@@ -74,14 +76,18 @@ class ConnectionOrchestrator(
             override suspend fun modeForOther(): LinkMode =
                 linkProfileRepository.getById(LinkProfile.OTHER_ID)?.mode ?: LinkMode.PROXY
         }
-        return LinkClassifier(context, connectivityManager, lookup).classify(dataSubscriptionId = null)
+        return LinkClassifier(context, connectivityManager, lookup)
+            .classify(dataSubscriptionId = activeDataSubscriptionId())
     }
+
+    private fun activeDataSubscriptionId(): Int? = DataSubscriptionIds.activeOrNull()
 
     private suspend fun applyLocked(plan: RuntimePlan) {
         if (plan == lastApplied) {
-            Log.d(TAG, "plan unchanged: ${plan.reason}")
+            Log.i(TAG, "plan unchanged: ${plan.reason}")
             return
         }
+        Log.i(TAG, "apply ${plan.runtime}: ${plan.reason}")
         _state.value = _state.value.copy(isApplying = true, plan = plan)
         try {
             when (plan.runtime) {
@@ -119,8 +125,8 @@ class ConnectionOrchestrator(
     }
 
     private suspend fun applyVpn(plan: RuntimePlan) {
+        SystemProxyManager(context, preferences).disable()
         if (ProxyModeService.state.value.isRunning) {
-            SystemProxyManager(context, preferences).disable()
             stopProxyLocked()
         }
         val vpnId = plan.vpnNetworkId

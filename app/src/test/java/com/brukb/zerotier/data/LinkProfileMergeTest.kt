@@ -50,6 +50,28 @@ class LinkProfileMergeTest {
     }
 
     @Test
+    fun mergeWifi_newDefaultsToProxy() {
+        val merged = LinkProfile.mergeWifi(null, "HomeWiFi", LinkMode.PROXY)
+        assertEquals("wifi-HomeWiFi", merged.id)
+        assertEquals(LinkKind.WIFI, merged.kind)
+        assertEquals(LinkMode.PROXY, merged.mode)
+        assertEquals("HomeWiFi", merged.ssid)
+    }
+
+    @Test
+    fun mergeWifi_existingKeepsMode() {
+        val existing = LinkProfile(
+            id = "wifi-HomeWiFi",
+            kind = LinkKind.WIFI,
+            mode = LinkMode.VPN,
+            ssid = "HomeWiFi",
+        )
+        val merged = LinkProfile.mergeWifi(existing, "HomeWiFi", LinkMode.PROXY)
+        assertEquals(LinkMode.VPN, merged.mode)
+        assertEquals(existing, merged)
+    }
+
+    @Test
     fun seedOther() {
         val other = LinkProfile.seedOther()
         assertEquals(LinkProfile.OTHER_ID, other.id)

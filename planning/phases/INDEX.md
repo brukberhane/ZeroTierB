@@ -15,7 +15,7 @@
 | T05 | [libzt HTTP proxy on 127.0.0.1](./T05-libzt-http-proxy-loopback.md) | ✅ | T04 | T06 | L4 | |
 | T06 | [System HTTP_PROXY + Shizuku grant](./T06-system-proxy-shizuku.md) | ✅ | T05 | T07 | L5 | |
 | T07 | [VPN single-net + exclusive stack swap](./T07-vpn-single-net-swap.md) | ✅ | T06 | T08 | L6 | |
-| T08 | [AUTO physical-link observer](./T08-auto-link-observer.md) | Pending | T07 | T09 | L6 | |
+| T08 | [AUTO physical-link observer](./T08-auto-link-observer.md) | ✅ | T07 | T09 | L6 | |
 | T09 | [UI: global mode, Links, pin Main](./T09-ui-global-links-pin.md) | Pending | T08 | T10 | L7 | |
 | T10 | [E2E / CoS proof](./T10-e2e-cos-proof.md) | Pending | T09 | — | L8 | |
 

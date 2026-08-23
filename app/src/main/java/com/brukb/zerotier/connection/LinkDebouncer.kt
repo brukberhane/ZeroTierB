@@ -9,18 +9,18 @@ import kotlinx.coroutines.sync.withLock
 
 class LinkDebouncer(
     private val scope: CoroutineScope,
-    private val delayMs: () -> Long,
+    private val delayMs: suspend () -> Long,
     private val action: suspend () -> Unit,
 ) {
     private val mutex = Mutex()
     private var job: Job? = null
 
     fun trigger() {
-        val wait = delayMs()
         scope.launch {
             mutex.withLock {
                 job?.cancel()
                 job = scope.launch {
+                    val wait = delayMs()
                     delay(wait)
                     action()
                 }

@@ -49,6 +49,14 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 
 <!-- last-verified: 2026-08 -->
 
+### `Stale loopback saved as user proxy`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| PROXY→VPN leaves `http_proxy=127.0.0.1:oldPort` | `enable()` saved leftover `127.0.0.1:oldPort` (previous session) as "user proxy"; `disable()` restored it | Never save/restore `127.0.0.1:*`. `isLoopbackProxy` any port → treat as ours → restore `:0` |
+
+<!-- last-verified: 2026-08 -->
+
 ### `hasPermission false positive`
 
 | Symptom | Cause | Fix |

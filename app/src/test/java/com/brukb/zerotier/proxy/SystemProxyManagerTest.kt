@@ -26,11 +26,9 @@ class SystemProxyManagerTest {
     }
 
     @Test
-    fun decideValueToSaveOnEnable_differentLoopbackPort_returnsCurrent() {
-        assertEquals(
-            "127.0.0.1:1111",
-            SystemProxyManager.decideValueToSaveOnEnable("127.0.0.1:1111", 41275),
-        )
+    fun decideValueToSaveOnEnable_staleLoopbackOtherPort_returnsNull() {
+        assertEquals(null, SystemProxyManager.decideValueToSaveOnEnable("127.0.0.1:1111", 41275))
+        assertEquals(null, SystemProxyManager.decideValueToSaveOnEnable(":0", 41275))
     }
 
     @Test
@@ -43,6 +41,11 @@ class SystemProxyManagerTest {
         assertEquals(":0", SystemProxyManager.decideRestoreOnDisable(null))
         assertEquals(":0", SystemProxyManager.decideRestoreOnDisable(""))
         assertEquals(":0", SystemProxyManager.decideRestoreOnDisable(":0"))
+    }
+
+    @Test
+    fun decideRestoreOnDisable_staleLoopback_returnsColonZero() {
+        assertEquals(":0", SystemProxyManager.decideRestoreOnDisable("127.0.0.1:42191"))
     }
 
     @Test
@@ -61,6 +64,13 @@ class SystemProxyManagerTest {
     fun shouldClearStale_ourLoopbackWhenNotProxyMode() {
         assertTrue(
             SystemProxyManager.shouldClearStale("127.0.0.1:41275", null, 41275, proxyModeActive = false),
+        )
+    }
+
+    @Test
+    fun shouldClearStale_staleLoopbackOtherPortWhenNotProxyMode() {
+        assertTrue(
+            SystemProxyManager.shouldClearStale("127.0.0.1:42191", null, 0, proxyModeActive = false),
         )
     }
 

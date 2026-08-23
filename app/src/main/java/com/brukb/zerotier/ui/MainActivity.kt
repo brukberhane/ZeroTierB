@@ -1,6 +1,5 @@
 package com.brukb.zerotier.ui
 
-import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -15,15 +14,14 @@ import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.system.ShizukuPermissionHelper
-import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vpnConsentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            ZerotierBVpnService.start(this)
+    ) {
+        lifecycleScope.launch {
+            (application as ZerotierBApplication).orchestrator.refresh()
         }
     }
 
@@ -43,7 +41,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDebugIntent(intent: Intent?) {
-        when (intent?.getStringExtra(EXTRA_DEBUG_ACTION)) {
+        val action = intent?.getStringExtra(EXTRA_DEBUG_ACTION) ?: return
+        intent.removeExtra(EXTRA_DEBUG_ACTION)
+        when (action) {
             ACTION_START_PROXY -> {
                 Log.i(TAG, "adb debug: starting proxy")
                 ProxyModeService.start(this)
@@ -64,8 +64,12 @@ class MainActivity : ComponentActivity() {
                 val raw = intent.getStringExtra(EXTRA_MODE)
                 val mode = GlobalMode.parse(raw)
                 Log.i(TAG, "adb debug: apply mode=$mode")
-                lifecycleScope.launch {
-                    (application as ZerotierBApplication).orchestrator.applyGlobalMode(mode)
+                if (mode == GlobalMode.VPN) {
+                    requestVpnViaOrchestrator()
+                } else {
+                    lifecycleScope.launch {
+                        (application as ZerotierBApplication).orchestrator.applyGlobalMode(mode)
+                    }
                 }
             }
             ACTION_STOP_ALL -> {
@@ -78,11 +82,20 @@ class MainActivity : ComponentActivity() {
     }
 
     fun requestVpnAndStart() {
-        val prepare = VpnService.prepare(this)
-        if (prepare != null) {
-            vpnConsentLauncher.launch(prepare)
-        } else {
-            ZerotierBVpnService.start(this)
+        requestVpnViaOrchestrator()
+    }
+
+    private fun requestVpnViaOrchestrator() {
+        lifecycleScope.launch {
+            val app = application as ZerotierBApplication
+            app.preferences.setGlobalMode(GlobalMode.VPN)
+            val prepare = VpnService.prepare(this@MainActivity)
+            if (prepare != null) {
+                Log.i(TAG, "VPN consent required — showing system dialog")
+                vpnConsentLauncher.launch(prepare)
+            } else {
+                app.orchestrator.refresh()
+            }
         }
     }
 

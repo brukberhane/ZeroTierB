@@ -73,6 +73,22 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 <!-- last-verified: 2026-08 -->
 
+### `VPN mode leaves HTTP_PROXY loopback`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `apply_mode VPN` but `http_proxy` still `127.0.0.1:*`; logcat empty | No consent dialog — resolver fell back to PROXY silently; orchestrator logs were `Log.d` | `apply_mode VPN` must `VpnService.prepare()` from Activity first; `applyVpn` always calls `SystemProxyManager.disable()` even when proxy service already dead; use `Log.i` on apply |
+
+<!-- last-verified: 2026-08 -->
+
+### `ADB extras dropped on running MainActivity`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `am start` PROXY works, later VPN/stop_all no-op; "Activity not started, intent has been delivered" | `launchMode=standard` + launcher `MAIN` — OEM delivers to top instance without `onNewIntent` | `singleTop` + action `com.brukb.zerotier.DEBUG`; consume extras after handle. ADB: `am start -a com.brukb.zerotier.DEBUG -n …/.ui.MainActivity -f 0x20000000 --es …` |
+
+<!-- last-verified: 2026-08 -->
+
 ### `Consent fallback still carries vpnNetworkId`
 
 | Symptom | Cause | Fix |

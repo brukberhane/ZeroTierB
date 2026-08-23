@@ -27,6 +27,20 @@ data class LinkProfile(
 
         fun mobileId(subscriptionId: Int): String = "mobile-$subscriptionId"
 
+        fun wifiId(ssid: String): String = "wifi-$ssid"
+
+        fun mergeWifi(existing: LinkProfile?, ssid: String, mode: LinkMode): LinkProfile {
+            if (existing == null) {
+                return LinkProfile(
+                    id = wifiId(ssid),
+                    kind = LinkKind.WIFI,
+                    mode = mode,
+                    ssid = ssid,
+                )
+            }
+            return existing
+        }
+
         fun mergeMobile(
             existing: LinkProfile?,
             subscriptionId: Int,

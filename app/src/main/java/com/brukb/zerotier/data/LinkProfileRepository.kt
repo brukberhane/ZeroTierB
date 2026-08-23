@@ -1,5 +1,6 @@
 package com.brukb.zerotier.data
 
+import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.data.model.LinkProfile
 import kotlinx.coroutines.flow.Flow
 
@@ -34,6 +35,11 @@ class LinkProfileRepository(
             label = label,
             iccId = iccId,
         )
+        dao.upsert(merged)
+    }
+
+    suspend fun upsertWifi(ssid: String, mode: LinkMode = LinkMode.PROXY) {
+        val merged = LinkProfile.mergeWifi(dao.getBySsid(ssid), ssid, mode)
         dao.upsert(merged)
     }
 }

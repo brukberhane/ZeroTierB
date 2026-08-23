@@ -9,6 +9,7 @@ import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.SystemProxyManager
+import com.brukb.zerotier.system.LinkObserver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +32,12 @@ class ZerotierBApplication : Application() {
     lateinit var orchestrator: ConnectionOrchestrator
         private set
 
+    lateinit var linkObserver: LinkObserver
+        private set
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    internal val applicationScope: CoroutineScope get() = appScope
 
     override fun onCreate() {
         super.onCreate()
@@ -44,6 +50,13 @@ class ZerotierBApplication : Application() {
             preferences = preferences,
             networkRepository = networkRepository,
             linkProfileRepository = linkProfileRepository,
+            scope = appScope,
+        )
+        linkObserver = LinkObserver(
+            context = this,
+            preferences = preferences,
+            linkProfileRepository = linkProfileRepository,
+            orchestrator = orchestrator,
             scope = appScope,
         )
         appScope.launch {
@@ -61,6 +74,7 @@ class ZerotierBApplication : Application() {
                     Log.i(TAG, "Cleared stale system proxy (mode=$mode)")
                 }
             }
+            linkObserver.start()
         }
     }
 
