@@ -69,7 +69,7 @@ class LinkClassifier(
     private suspend fun wifiLink(caps: NetworkCapabilities): PhysicalLink {
         val ssid = SsidNormalizer.normalize(readSsid(caps))
         if (ssid == null) return PhysicalLink.WifiUnknown
-        val mode = modeLookup.modeForSsid(ssid) ?: return PhysicalLink.WifiUnknown
+        val mode = modeLookup.modeForSsid(ssid) ?: return PhysicalLink.WifiUnsaved(ssid)
         return PhysicalLink.WifiKnown(ssid, mode)
     }
 

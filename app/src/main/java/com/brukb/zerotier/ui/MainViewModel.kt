@@ -4,7 +4,18 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.connection.OrchestratorState
+import com.brukb.zerotier.connection.PhysicalLink
+import com.brukb.zerotier.connection.RuntimePlan
+import com.brukb.zerotier.data.AppPreferences
+import com.brukb.zerotier.data.model.GlobalMode
+import com.brukb.zerotier.data.model.LinkKind
+import com.brukb.zerotier.data.model.LinkMode
+import com.brukb.zerotier.data.model.LinkProfile
 import com.brukb.zerotier.data.model.ZerotierBNetwork
+import com.brukb.zerotier.proxy.ProxyModeService
+import com.brukb.zerotier.proxy.ProxyServiceState
+import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.vpn.VpnServiceState
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,24 +23,61 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MainUiState(
-    val serviceState: VpnServiceState = VpnServiceState(),
+    val globalMode: GlobalMode = GlobalMode.OFF,
+    val plan: RuntimePlan? = null,
+    val lastLink: PhysicalLink? = null,
+    val isApplying: Boolean = false,
+    val orchestratorError: String? = null,
+    val vpnConsentMissing: Boolean = false,
+    val vpn: VpnServiceState = VpnServiceState(),
+    val proxy: ProxyServiceState = ProxyServiceState(),
     val networks: List<ZerotierBNetwork> = emptyList(),
+    val linkProfiles: List<LinkProfile> = emptyList(),
+    val linkDebounceMs: Int = AppPreferences.DEFAULT_LINK_DEBOUNCE_MS,
+    val startOnBoot: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as ZerotierBApplication
 
-    private val networks = app.networkRepository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     val uiState: StateFlow<MainUiState> = combine(
+        app.preferences.globalMode,
+        app.orchestrator.state,
         ZerotierBVpnService.state,
-        networks,
-    ) { service, networkList ->
-        MainUiState(serviceState = service, networks = networkList)
+        ProxyModeService.state,
+        app.networkRepository.observeAll(),
+        app.linkProfileRepository.observeAll(),
+        app.preferences.linkDebounceMs,
+        app.preferences.startOnBoot,
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val mode = values[0] as GlobalMode
+        val orch = values[1] as OrchestratorState
+        val vpn = values[2] as VpnServiceState
+        val proxy = values[3] as ProxyServiceState
+        val networks = values[4] as List<ZerotierBNetwork>
+        val profiles = values[5] as List<LinkProfile>
+        val debounce = values[6] as Int
+        val boot = values[7] as Boolean
+        MainUiState(
+            globalMode = mode,
+            plan = orch.plan,
+            lastLink = orch.lastLink,
+            isApplying = orch.isApplying,
+            orchestratorError = orch.lastError,
+            vpnConsentMissing = orch.plan?.vpnConsentMissing == true,
+            vpn = vpn,
+            proxy = proxy,
+            networks = networks,
+            linkProfiles = profiles,
+            linkDebounceMs = debounce,
+            startOnBoot = boot,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     private val _showAddNetwork = MutableStateFlow(false)
@@ -38,11 +86,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedNetwork = MutableStateFlow<ZerotierBNetwork?>(null)
     val selectedNetwork: StateFlow<ZerotierBNetwork?> = _selectedNetwork
 
-    fun toggleRunning(enabled: Boolean, requestVpn: () -> Unit) {
-        if (enabled) {
-            requestVpn()
-        } else {
-            ZerotierBVpnService.stop(getApplication())
+    private val _showLinks = MutableStateFlow(false)
+    val showLinks: StateFlow<Boolean> = _showLinks
+
+    fun setShowLinks(show: Boolean) {
+        _showLinks.value = show
+    }
+
+    fun setGlobalMode(mode: GlobalMode) {
+        viewModelScope.launch {
+            app.orchestrator.applyGlobalMode(mode)
+        }
+    }
+
+    fun togglePinnedMain(network: ZerotierBNetwork) {
+        viewModelScope.launch {
+            if (network.isPinnedMain) {
+                app.networkRepository.clearPinnedMain()
+            } else {
+                app.networkRepository.setPinnedMain(network.networkId)
+            }
+            app.orchestrator.refresh()
         }
     }
 
@@ -57,33 +121,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             app.networkRepository.upsert(
                 ZerotierBNetwork(networkId = normalized, name = name.ifBlank { normalized }),
             )
-            if (ZerotierBVpnService.state.value.isRunning) {
-                ZerotierBVpnService.joinNetwork(getApplication(), normalized)
-            }
+            app.orchestrator.refresh()
         }
         _showAddNetwork.value = false
     }
 
     fun deleteNetwork(networkId: String) {
         viewModelScope.launch {
-            if (ZerotierBVpnService.state.value.isRunning) {
-                ZerotierBVpnService.leaveNetwork(getApplication(), networkId)
-            }
             app.networkRepository.delete(networkId)
+            app.orchestrator.refresh()
         }
     }
 
     fun toggleNetworkEnabled(network: ZerotierBNetwork, enabled: Boolean) {
         viewModelScope.launch {
-            val updated = network.copy(isEnabled = enabled)
-            app.networkRepository.update(updated)
-            if (ZerotierBVpnService.state.value.isRunning) {
-                if (enabled) {
-                    ZerotierBVpnService.joinNetwork(getApplication(), network.networkId)
-                } else {
-                    ZerotierBVpnService.leaveNetwork(getApplication(), network.networkId)
-                }
-            }
+            app.networkRepository.update(network.copy(isEnabled = enabled))
+            app.orchestrator.refresh()
         }
     }
 
@@ -103,10 +156,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveNetwork(network: ZerotierBNetwork) {
         viewModelScope.launch {
+            if (network.isPinnedMain) {
+                app.networkRepository.setPinnedMain(network.networkId)
+            }
             app.networkRepository.update(network)
             _selectedNetwork.value = network
-            if (ZerotierBVpnService.state.value.isRunning && network.isEnabled) {
-                ZerotierBVpnService.joinNetwork(getApplication(), network.networkId)
+            app.orchestrator.refresh()
+        }
+    }
+
+    fun setLinkMode(profile: LinkProfile, mode: LinkMode) {
+        viewModelScope.launch {
+            app.linkProfileRepository.upsert(profile.copy(mode = mode))
+            app.orchestrator.refresh()
+        }
+    }
+
+    fun deleteWifiProfile(profile: LinkProfile) {
+        if (profile.kind != LinkKind.WIFI) return
+        viewModelScope.launch {
+            app.linkProfileRepository.delete(profile.id)
+            app.orchestrator.refresh()
+        }
+    }
+
+    fun saveCurrentSsid() {
+        val ssid = unsavedWifiSsid(uiState.value.lastLink) ?: return
+        viewModelScope.launch {
+            app.linkProfileRepository.upsertWifi(ssid)
+            app.orchestrator.refresh()
+        }
+    }
+
+    fun setLinkDebounceMs(ms: Int) {
+        viewModelScope.launch {
+            app.preferences.setLinkDebounceMs(ms)
+        }
+    }
+
+    fun grantSecureSettings() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                ShizukuPermissionHelper.grantWriteSecureSettings(getApplication())
+            }
+            if (result.isSuccess) {
+                app.orchestrator.invalidateAppliedPlan()
+                app.orchestrator.refresh()
             }
         }
     }

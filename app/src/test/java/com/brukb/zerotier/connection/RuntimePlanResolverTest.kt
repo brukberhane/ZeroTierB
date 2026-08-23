@@ -101,6 +101,13 @@ class RuntimePlanResolverTest {
     }
 
     @Test
+    fun case10b_autoWifiUnsavedIsProxy() {
+        val plan = resolve(GlobalMode.AUTO, PhysicalLink.WifiUnsaved("Cafe"), false, oneNet)
+        assertEquals(Runtime.PROXY, plan.runtime)
+        assertTrue(plan.reason.contains("unsaved ssid=Cafe"))
+    }
+
+    @Test
     fun case11_autoWifiKnownOff() {
         val plan = resolve(GlobalMode.AUTO, PhysicalLink.WifiKnown("Home", LinkMode.OFF), true, twoNets)
         assertEquals(Runtime.OFF, plan.runtime)

@@ -61,6 +61,9 @@ fun NetworkDetailScreen(
                 ToggleRow("Allow DNS", edited.allowDns) {
                     edited = edited.copy(allowDns = it)
                 }
+                ToggleRow("Main network", edited.isPinnedMain) {
+                    edited = edited.copy(isPinnedMain = it)
+                }
             }
         },
         confirmButton = {

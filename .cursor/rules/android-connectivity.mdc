@@ -10,6 +10,7 @@ alwaysApply: false
 
 - Choosing the physical `Network` (not our VPN overlay) → `PhysicalLink`
 - Wi-Fi SSID normalize + unknown → `WifiUnknown` / implicit PROXY (no auto Room row)
+- Readable SSID without saved profile → `WifiUnsaved` (Save SSID in Links; AUTO treats as PROXY)
 - Per-`subscriptionId` mobile profiles via `DataSubscriptionIds` + classifier
 - Built-in Other (ethernet, USB, Bluetooth PAN client, leftover)
 - Trailing debounce (default 5s, clamp 3–15s) via `LinkDebouncer` → `LinkObserver`
@@ -22,9 +23,10 @@ Does **not** cover: RuntimePlan resolve (connection-orchestrator), APN DB writes
 1. Never treat our `VpnService` network as the physical link — strip `TRANSPORT_VPN` and pick Wi‑Fi/cell/other via `PhysicalLinkSelector`.
 2. Public SDK jars may **lack** `NetworkCapabilities.getUnderlyingNetworks()` — do not depend on it; scan `allNetworks` instead. Still call `VpnService.setUnderlyingNetworks` on establish when available.
 3. Unknown SSID (`<unknown ssid>`, `0x…`, empty, no location perm) → `WifiUnknown`; do not insert `LinkProfile`.
-4. Dual-SIM: match **data** subscription, not "any cellular".
-5. Phone as hotspot AP: classify the **upstream** default network, not the AP iface.
-6. Last `NetworkCallback` event wins after quiet period (`LinkDebouncer` trailing).
+4. Readable SSID with no `LinkProfile` row → `WifiUnsaved(ssid)`; AUTO implicit PROXY; Links **Save SSID** enabled only here.
+5. Dual-SIM: match **data** subscription, not "any cellular".
+6. Phone as hotspot AP: classify the **upstream** default network, not the AP iface.
+7. Last `NetworkCallback` event wins after quiet period (`LinkDebouncer` trailing).
 
 ## External docs
 

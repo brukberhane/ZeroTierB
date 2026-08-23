@@ -81,8 +81,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun requestVpnConsent() {
+        requestVpnConsentOnly()
+    }
+
     fun requestVpnAndStart() {
         requestVpnViaOrchestrator()
+    }
+
+    fun refreshAfterPermission() {
+        lifecycleScope.launch {
+            (application as ZerotierBApplication).orchestrator.refresh()
+        }
+    }
+
+    private fun requestVpnConsentOnly() {
+        val prepare = VpnService.prepare(this)
+        if (prepare != null) {
+            Log.i(TAG, "VPN consent required — showing system dialog")
+            vpnConsentLauncher.launch(prepare)
+        } else {
+            lifecycleScope.launch {
+                (application as ZerotierBApplication).orchestrator.refresh()
+            }
+        }
     }
 
     private fun requestVpnViaOrchestrator() {

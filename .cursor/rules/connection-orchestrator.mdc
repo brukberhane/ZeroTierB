@@ -96,3 +96,19 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 | UI/services act on VPN id while runtime is PROXY | Consent path set `vpnNetworkId` before downgrade | Set `vpnNetworkId` only when `runtime == VPN` |
 
 <!-- last-verified: 2026-08 -->
+
+### `VPN main net change while VPN up`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Pin Main / route change while VPN running — old net still on TUN | `applyVpn` only starts when `!isRunning`; equal-runtime refresh skips swap | If VPN running and `plan.vpnNetworkId != lastApplied?.vpnNetworkId`, `stopVpnLocked()` then start new id |
+
+<!-- last-verified: 2026-08 -->
+
+### `Shizuku grant does not enable HTTP_PROXY`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Grant succeeds but apps still bypass proxy | `plan == lastApplied` skips re-apply | After grant: `invalidateAppliedPlan()` then `refresh()`; run Shizuku `waitFor` off main thread |
+
+<!-- last-verified: 2026-08 -->

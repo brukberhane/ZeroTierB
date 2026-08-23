@@ -44,3 +44,19 @@ Does **not** cover: orchestrator internals.
 | Toggle bypasses AUTO | `MainViewModel` still calls `ZerotierBVpnService.start` | Route all mode changes through orchestrator |
 
 <!-- last-verified: 2026-08 -->
+
+### `Consent banner flips global mode`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| AUTO + consent-missing banner → user taps Grant → global mode becomes VPN | Banner reused `requestVpnAndStart()` which calls `setGlobalMode(VPN)` | Banner: `requestVpnConsent()` = `VpnService.prepare()` + `orchestrator.refresh()` only; segmented VPN chip keeps full `requestVpnAndStart()` |
+
+<!-- last-verified: 2026-08 -->
+
+### `M3 Expressive BOM blocked`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| material3 1.5.0-alpha needs AGP 9 / compileSdk 37 | BOM bump on pinned AGP 8.7 | Stay on `compose-bom:2024.12.01`; use stable `SegmentedButton` + `CircularProgressIndicator` |
+
+<!-- last-verified: 2026-08 -->

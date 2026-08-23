@@ -28,6 +28,7 @@ object RuntimePlanResolver {
         return when (link) {
             is PhysicalLink.None -> offPlan("AUTO no link")
             is PhysicalLink.WifiUnknown -> proxyPlan("AUTO unknown wifi", enabled)
+            is PhysicalLink.WifiUnsaved -> proxyPlan("AUTO unsaved ssid=${link.ssid}", enabled)
             is PhysicalLink.WifiKnown -> planFor(link.mode, "AUTO ssid=${link.ssid}", vpnConsentGranted, enabled)
             is PhysicalLink.Mobile -> planFor(
                 link.mode,

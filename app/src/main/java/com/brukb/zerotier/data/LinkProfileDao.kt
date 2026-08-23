@@ -32,4 +32,7 @@ interface LinkProfileDao {
         """,
     )
     suspend fun ensureOther()
+
+    @Query("DELETE FROM link_profiles WHERE id = :id AND kind = 'WIFI'")
+    suspend fun delete(id: String)
 }

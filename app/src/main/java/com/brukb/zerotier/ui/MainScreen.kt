@@ -1,13 +1,15 @@
 package com.brukb.zerotier.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,19 +17,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,9 +47,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brukb.zerotier.R
+import com.brukb.zerotier.connection.Runtime
+import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.ZerotierBNetwork
+import com.brukb.zerotier.proxy.SystemProxyManager
+import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.ui.theme.ZerotierBTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,18 +64,37 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val showAdd by viewModel.showAddNetwork.collectAsState()
     val selected by viewModel.selectedNetwork.collectAsState()
+    val showLinks by viewModel.showLinks.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? MainActivity
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        activity?.refreshAfterPermission()
+    }
+
+    LaunchedEffect(uiState.globalMode, showLinks) {
+        if (uiState.globalMode == GlobalMode.AUTO || showLinks) {
+            requestLinkPermissions(permissionLauncher)
+        }
+    }
 
     ZerotierBTheme {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("ZerotierB") },
+                    title = { Text(stringResource(R.string.app_name)) },
                     actions = {
+                        IconButton(onClick = {
+                            requestLinkPermissions(permissionLauncher)
+                            viewModel.setShowLinks(true)
+                        }) {
+                            Icon(Icons.Default.Wifi, contentDescription = stringResource(R.string.links_title))
+                        }
                         IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title))
                         }
                     },
                 )
@@ -72,25 +108,65 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatusCard(
-                    isRunning = uiState.serviceState.isRunning,
-                    onToggle = { enabled ->
-                        viewModel.toggleRunning(enabled) {
+                    globalMode = uiState.globalMode,
+                    onMode = { mode ->
+                        if (mode == GlobalMode.AUTO) {
+                            requestLinkPermissions(permissionLauncher)
+                        }
+                        if (mode == GlobalMode.VPN) {
                             activity?.requestVpnAndStart()
+                        } else {
+                            viewModel.setGlobalMode(mode)
                         }
                     },
-                    nodeId = uiState.serviceState.nodeId,
-                    status = uiState.serviceState.statusMessage,
-                    overlapWarning = viewModel.overlapWarning(uiState.serviceState),
+                    runtime = uiState.plan?.runtime,
+                    reason = uiState.plan?.reason,
+                    nodeId = uiState.vpn.nodeId.ifBlank { uiState.proxy.nodeId.orEmpty() },
+                    status = uiState.vpn.statusMessage.takeIf { uiState.vpn.isRunning }
+                        ?: uiState.proxy.statusMessage,
+                    linkLine = formatLinkLine(uiState.lastLink),
+                    proxyLine = proxyStatusText(uiState.proxy),
+                    isApplying = uiState.isApplying,
+                    overlapWarning = viewModel.overlapWarning(uiState.vpn),
+                    error = uiState.orchestratorError,
                 )
+
+                if (uiState.vpnConsentMissing) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.vpn_consent_banner),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            TextButton(onClick = { activity?.requestVpnConsent() }) {
+                                Text(stringResource(R.string.vpn_consent_action))
+                            }
+                        }
+                    }
+                }
+
+                val showGrant = (uiState.globalMode == GlobalMode.PROXY ||
+                    uiState.plan?.runtime == Runtime.PROXY) &&
+                    !uiState.proxy.hasSecureSettingsPermission
+                if (showGrant) {
+                    GrantSecureSettingsCard(
+                        shizukuAvailable = ShizukuPermissionHelper.isAvailable(),
+                        adbCommand = SystemProxyManager.adbGrantCommand(context.packageName),
+                        onShizukuGrant = { viewModel.grantSecureSettings() },
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Networks", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.networks_title), style = MaterialTheme.typography.titleMedium)
                     IconButton(onClick = { viewModel.showAddNetworkDialog(true) }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add network")
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_network))
                     }
                 }
 
@@ -98,10 +174,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     items(uiState.networks, key = { it.networkId }) { network ->
                         NetworkRow(
                             network = network,
-                            runtimeStatus = viewModel.runtimeStatus(network.networkId, uiState.serviceState),
+                            runtimeStatus = viewModel.runtimeStatus(network.networkId, uiState.vpn),
                             onOpen = { viewModel.openNetworkDetail(network) },
                             onToggle = { viewModel.toggleNetworkEnabled(network, it) },
                             onDelete = { viewModel.deleteNetwork(network.networkId) },
+                            onPin = { viewModel.togglePinnedMain(network) },
                         )
                     }
                 }
@@ -123,8 +200,16 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             )
         }
 
+        if (showLinks) {
+            LinksScreen(
+                viewModel = viewModel,
+                onDismiss = { viewModel.setShowLinks(false) },
+            )
+        }
+
         if (showSettings) {
             SettingsDialog(
+                startOnBoot = uiState.startOnBoot,
                 onDismiss = { showSettings = false },
                 onStartOnBoot = viewModel::setStartOnBoot,
             )
@@ -132,29 +217,70 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 }
 
+private fun requestLinkPermissions(
+    launcher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
+) {
+    val perms = if (Build.VERSION.SDK_INT >= 33) {
+        arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES)
+    } else {
+        arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
+    }
+    launcher.launch(perms)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StatusCard(
-    isRunning: Boolean,
-    onToggle: (Boolean) -> Unit,
+    globalMode: GlobalMode,
+    onMode: (GlobalMode) -> Unit,
+    runtime: Runtime?,
+    reason: String?,
     nodeId: String,
     status: String,
+    linkLine: String,
+    proxyLine: String?,
+    isApplying: Boolean,
     overlapWarning: String?,
+    error: String?,
 ) {
+    val modes = GlobalMode.entries
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("VPN", style = MaterialTheme.typography.titleMedium)
-                Switch(checked = isRunning, onCheckedChange = onToggle)
+            Text(stringResource(R.string.mode_title), style = MaterialTheme.typography.titleMedium)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                modes.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = globalMode == mode,
+                        onClick = { onMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, modes.size),
+                    ) {
+                        Text(mode.name)
+                    }
+                }
             }
+            if (isApplying) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator()
+                    Text(stringResource(R.string.applying), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text(
+                stringResource(R.string.runtime_line, runtime?.name ?: "OFF", reason ?: "—"),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(linkLine, style = MaterialTheme.typography.bodyMedium)
             if (nodeId.isNotBlank()) {
-                Text("Node: $nodeId", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.node_line, nodeId), style = MaterialTheme.typography.bodySmall)
             }
             Text(status, style = MaterialTheme.typography.bodyMedium)
+            proxyLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             overlapWarning?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -168,6 +294,7 @@ private fun NetworkRow(
     onOpen: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
+    onPin: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -183,12 +310,26 @@ private fun NetworkRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(network.name.ifBlank { network.networkId }, style = MaterialTheme.typography.titleSmall)
                 Text(network.networkId, style = MaterialTheme.typography.bodySmall)
-                Text("Status: $runtimeStatus", style = MaterialTheme.typography.bodySmall)
-                Text("Route priority: ${network.routePriority}", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.status_line, runtimeStatus), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.route_priority_line, network.routePriority),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
+            FilterChip(
+                selected = network.isPinnedMain,
+                onClick = onPin,
+                label = { Text(stringResource(R.string.main_chip)) },
+                leadingIcon = {
+                    Icon(
+                        if (network.isPinnedMain) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = stringResource(R.string.pin_main),
+                    )
+                },
+            )
             Switch(checked = network.isEnabled, onCheckedChange = onToggle)
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_network))
             }
         }
     }
@@ -203,56 +344,53 @@ private fun AddNetworkDialog(
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Join network") },
+        title = { Text(stringResource(R.string.join_network)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = networkId,
                     onValueChange = { networkId = it },
-                    label = { Text("Network ID (16 hex)") },
+                    label = { Text(stringResource(R.string.network_id_label)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name (optional)") },
+                    label = { Text(stringResource(R.string.network_name_label)) },
                     singleLine = true,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onAdd(networkId, name) }) { Text("Add") }
+            TextButton(onClick = { onAdd(networkId, name) }) { Text(stringResource(R.string.add)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
 
 @Composable
 private fun SettingsDialog(
+    startOnBoot: Boolean,
     onDismiss: () -> Unit,
     onStartOnBoot: (Boolean) -> Unit,
 ) {
-    var startOnBoot by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings") },
+        title = { Text(stringResource(R.string.settings_title)) },
         text = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Start VPN on boot")
-                Switch(checked = startOnBoot, onCheckedChange = {
-                    startOnBoot = it
-                    onStartOnBoot(it)
-                })
+                Text(stringResource(R.string.start_on_boot))
+                Switch(checked = startOnBoot, onCheckedChange = onStartOnBoot)
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
 }

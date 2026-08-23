@@ -4,6 +4,8 @@ import com.brukb.zerotier.data.model.LinkMode
 
 sealed interface PhysicalLink {
     data class WifiKnown(val ssid: String, val mode: LinkMode) : PhysicalLink
+    /** Readable SSID with no saved LinkProfile row yet (Save SSID in Links). */
+    data class WifiUnsaved(val ssid: String) : PhysicalLink
     data object WifiUnknown : PhysicalLink
     data class Mobile(val subscriptionId: Int, val mode: LinkMode) : PhysicalLink
     data class Other(val mode: LinkMode) : PhysicalLink

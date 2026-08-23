@@ -42,4 +42,12 @@ class LinkProfileRepository(
         val merged = LinkProfile.mergeWifi(dao.getBySsid(ssid), ssid, mode)
         dao.upsert(merged)
     }
+
+    suspend fun upsert(profile: LinkProfile) {
+        dao.upsert(profile)
+    }
+
+    suspend fun delete(id: String) {
+        dao.delete(id)
+    }
 }

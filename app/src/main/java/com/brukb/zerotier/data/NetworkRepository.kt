@@ -35,6 +35,8 @@ class NetworkRepository(
 
     suspend fun setPinnedMain(networkId: String) = dao.setPinnedMain(networkId)
 
+    suspend fun clearPinnedMain() = dao.clearPinnedMain()
+
     suspend fun migrateStoredNetworkIds() {
         for (network in dao.getAll()) {
             if (!ZerotierBNetwork.isValidNetworkId(network.networkId)) continue

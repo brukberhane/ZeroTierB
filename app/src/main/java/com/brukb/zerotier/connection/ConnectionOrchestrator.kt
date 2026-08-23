@@ -64,6 +64,10 @@ class ConnectionOrchestrator(
         applyLocked(manualOffPlan())
     }
 
+    suspend fun invalidateAppliedPlan() {
+        mutex.withLock { lastApplied = null }
+    }
+
     private suspend fun classifyLink(): PhysicalLink {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val lookup = object : LinkModeLookup {
@@ -129,8 +133,13 @@ class ConnectionOrchestrator(
         if (ProxyModeService.state.value.isRunning) {
             stopProxyLocked()
         }
-        val vpnId = plan.vpnNetworkId
-        if (vpnId != null && !ZerotierBVpnService.state.value.isRunning) {
+        val vpnId = plan.vpnNetworkId ?: return
+        val vpnRunning = ZerotierBVpnService.state.value.isRunning
+        val appliedId = lastApplied?.vpnNetworkId
+        if (vpnRunning && appliedId != vpnId) {
+            stopVpnLocked()
+        }
+        if (!ZerotierBVpnService.state.value.isRunning) {
             ZerotierBVpnService.start(context, singleNetworkId = vpnId)
         }
     }
