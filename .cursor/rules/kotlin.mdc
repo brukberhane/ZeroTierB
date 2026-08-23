@@ -1,0 +1,45 @@
+---
+description: Kotlin language, coroutines, unit tests
+globs: "**/*.kt"
+alwaysApply: false
+---
+
+# Kotlin rules
+
+## Scope
+
+- Kotlin 2.0 / JVM 17 style in `app` and tests (see root `build.gradle.kts` — do not assume README aspirational versions)
+- Coroutines, Flows, JUnit 4 tests under `app/src/test`
+
+Does **not** cover: JNI C++, Gradle plugin bumps.
+
+## Invariants
+
+1. New logic gets unit tests in the same task (table-ish parameterized where cheap).
+2. Orchestrator / classifier / route resolver must be testable without Robolectric when possible (fakes).
+3. No `runBlocking` on the main thread in production code (BootReceiver already uses it — do not spread).
+4. Match existing naming: `ZerotierB*`, package `com.brukb.zerotier`.
+
+## External docs
+
+**Docs (if stuck):** https://kotlinlang.org/docs/home.html
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Log not mocked in unit tests`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `RuntimeException: Method d in android.util.Log not mocked` during JVM unit tests | Android framework stubs throw unless configured | Set `android.testOptions.unitTests.isReturnDefaultValues = true` in the app module. Prefer not removing `Log` from production just to satisfy tests. |
+
+<!-- last-verified: 2026-08 -->
+
+### `Untestable Android types in resolver`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| RuntimePlan tests need a device | Resolver takes `Network` / `Context` | Pass already-classified `PhysicalLink` data class |
+
+<!-- last-verified: 2026-08 -->

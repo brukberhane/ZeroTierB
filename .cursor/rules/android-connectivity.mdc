@@ -1,0 +1,51 @@
+---
+description: Physical link classification — Wi-Fi SSID, per-SIM cellular, Other
+globs: "**/connectivity/**/*.kt,**/LinkClassifier.kt,**/LinkDebouncer.kt"
+alwaysApply: false
+---
+
+# Android connectivity rules
+
+## Scope
+
+- Choosing the physical `Network` (not our VPN overlay)
+- Wi-Fi SSID normalize + unknown → implicit PROXY (no auto Room row)
+- Per-`subscriptionId` mobile profiles
+- Built-in Other (ethernet, USB, Bluetooth PAN client, leftover)
+- Trailing debounce (default 5s, clamp 3–15s)
+
+Does **not** cover: RuntimePlan resolve (connection-orchestrator), APN DB writes.
+
+## Invariants
+
+1. Never treat our `VpnService` network as the physical link.
+2. Unknown SSID (`<unknown ssid>`, empty, no location perm) → PROXY, do not insert `LinkProfile`.
+3. Dual-SIM: match **data** subscription, not "any cellular".
+4. Phone as hotspot AP: classify the **upstream** default network, not the AP iface.
+5. Last `NetworkCallback` event wins after quiet period.
+
+## External docs
+
+**Docs (if stuck):** https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback
+
+SSID is location-restricted: https://developer.android.com/develop/connectivity/wifi/wifi-permissions
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Unknown SSID always`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Every Wi-Fi is "unknown" | Missing `NEARBY_WIFI_DEVICES` / `ACCESS_FINE_LOCATION` | Request on AUTO or Links screen; banner; still default PROXY |
+
+<!-- last-verified: 2026-08 -->
+
+### `Wrong SIM profile`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| SIM 1 profile while data is SIM 2 | Used `default` slot not data sub | `getActiveDataSubscriptionId()` / network subscription ids |
+
+<!-- last-verified: 2026-08 -->

@@ -1,0 +1,46 @@
+---
+description: Jetpack Compose UI for ZerotierB
+globs: "**/ui/**/*.kt"
+alwaysApply: false
+---
+
+# Compose rules
+
+## Scope
+
+- `MainScreen`, network detail, future Links / grant cards
+- ViewModels as the only UI→service bridge
+
+Does **not** cover: orchestrator internals.
+
+## Invariants
+
+1. Material 3 + existing theme. No extra design system.
+2. Global mode is a segmented control: OFF | PROXY | VPN | AUTO.
+3. ZT rows: enable + Main pin. No per-ZT PROXY/VPN chips.
+4. Links screen owns SSID rows, SIM rows, Other. "Save SSID" is explicit.
+5. Show proxy port and "system proxy inactive" honestly.
+
+## External docs
+
+**Docs (if stuck):** https://developer.android.com/jetpack/compose/documentation
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Compose lint KaCall crash`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `lintDebug` aborts: `Found class …KaFunctionCall, but interface was expected` in Compose runtime detectors | Compose BOM / Compose lint jars newer than Kotlin analysis API bundled with AGP | Align Compose BOM to the AGP+Kotlin generation (e.g. `2024.12.01` with AGP 8.7 / Kotlin 2.0). Disable only the crashing detectors as a temporary bridge — do not bump AGP/Kotlin as a drive-by. |
+
+<!-- last-verified: 2026-08 -->
+
+### `UI starts VPN directly`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Toggle bypasses AUTO | `MainViewModel` still calls `ZerotierBVpnService.start` | Route all mode changes through orchestrator |
+
+<!-- last-verified: 2026-08 -->

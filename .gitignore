@@ -8,7 +8,29 @@
 .externalNativeBuild
 .cxx
 app/build
+core/build
 libzt/cache
 libzt/dist
 libzt/pkg/android/.gradle
 libzt/pkg/android/app/build
+
+# secrets / env
+.env
+.env.*
+!.env.example
+!.env.ref
+!.env.*.example
+
+# local scratch
+tmp/
+temp/
+*.tmp
+*.swp
+
+# OS / editors
+Thumbs.db
+.vscode/
+*.code-workspace
+
+# logs
+*.log

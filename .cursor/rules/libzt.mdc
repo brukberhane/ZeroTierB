@@ -1,0 +1,47 @@
+---
+description: libzt userspace sockets and HTTP proxy path
+globs: "**/proxy/**/*.kt,**/ztlib/**/*.kt,**/libzt/**"
+alwaysApply: false
+---
+
+# libzt rules
+
+## Scope
+
+- libzt node init from storage, `ZeroTierSocket`
+- HTTP proxy CONNECT + origin-form (archive `HttpProxyServer`)
+- Longest-prefix route across joined nets (`routePriority` tie-break)
+
+Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
+
+## Invariants
+
+1. Bind HTTP (and optional SOCKS) on **127.0.0.1 only**. Port `0` (ephemeral); show port in UI.
+2. Destination in a ZT prefix → `ZeroTierSocket`. Else → `java.net.Socket` (uplink). No `blockOutside`.
+3. Do not start libzt while JNI `Node` is running.
+4. SOCKS is not the system proxy. SOCKS listen is optional later (INDEX phase 7-equivalent).
+5. Prefer restoring `archive/proxy-mode` then re-package to `com.brukb.zerotier` over rewriting from memory.
+
+## External docs
+
+**Docs (if stuck):** in-tree `libzt/README.md` and archive `com.zerotier.pylon.proxy`
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `JNI and libzt both loaded fighting UDP`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Bind fail on 9993/9994, or dual hello | Both nodes started | Orchestrator exclusive start; phase-2 spike; isolated process only as last resort (still one identity opener) |
+
+<!-- last-verified: 2026-08 -->
+
+### `LAN proxy`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Other devices can use the phone as proxy | Bound `0.0.0.0` | `InetSocketAddress("127.0.0.1", 0)` |
+
+<!-- last-verified: 2026-08 -->

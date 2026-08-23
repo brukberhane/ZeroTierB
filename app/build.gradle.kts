@@ -1,6 +1,3 @@
-import java.io.FileInputStream
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,20 +5,16 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val zerotierProperties = Properties().apply {
-    load(FileInputStream(rootProject.file("zerotier.properties")))
-}
-
 android {
-    namespace = "com.zerotier.pylon"
+    namespace = "com.brukb.zerotier"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.zerotier.pylon"
+        applicationId = "com.brukb.zerotier"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -54,14 +47,34 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    lint {
+        abortOnError = true
+        lintConfig = file("lint.xml")
+        // Unit-test sources trip Compose runtime lint (no Compose there).
+        checkTestSources = false
+        // Compose/lifecycle lint detectors crash with this AGP 8.7.3 + Kotlin 2.0.21
+        // mix when BOM is mismatched; keep these off until a later alignment task.
+        disable += setOf(
+            "FlowOperatorInvokedInComposition",
+            "FrequentlyChangingValue",
+            "RememberInComposition",
+            "AutoboxingStateCreation",
+            "NullSafeMutableLiveData",
+        )
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
-    val aarPath = zerotierProperties.getProperty("libzt.aar")
-        ?: error("libzt.aar not set in zerotier.properties")
-    implementation(files(rootProject.file(aarPath)))
+    implementation(project(":core"))
 
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    // Compose BOM must match AGP/Kotlin analysis API. 2026.06.00 crashes lint
+    // detectors against AGP 8.7.3 + Kotlin 2.0.21 (Ka*Call class/interface).
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.graphics:graphics-path:1.1.0")
@@ -82,9 +95,11 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+    compileOnly("org.projectlombok:lombok:1.18.36")
+    annotationProcessor("org.projectlombok:lombok:1.18.36")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    testImplementation("junit:junit:4.13.2")
 }

@@ -1,0 +1,38 @@
+---
+description: Shizuku grant of WRITE_SECURE_SETTINGS
+globs: "**/Shizuku*.kt,**/system/Shizuku*"
+alwaysApply: false
+---
+
+# Shizuku rules
+
+## Scope
+
+- Detect Shizuku binder
+- `pm grant <pkg> android.permission.WRITE_SECURE_SETTINGS` via Shizuku process API
+- Fallback copyable ADB one-liner
+
+Does **not** cover: using Shizuku for anything except this grant (no APN, no iptables).
+
+## Invariants
+
+1. Grant is optional convenience. ADB remains documented.
+2. Do not ship a rooted "su" path.
+3. Match archive helper: Shizuku 13.x API (`dev.rikka.shizuku:api` + provider).
+4. User must have Shizuku running; we do not start it.
+
+## External docs
+
+**Docs (if stuck):** https://github.com/RikkaApps/Shizuku/blob/master/README.md
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `newProcess hidden`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| No public `Shizuku.newProcess` | API is hidden / moved | Use archive reflection helper; fail closed with ADB copy |
+
+<!-- last-verified: 2026-08 -->

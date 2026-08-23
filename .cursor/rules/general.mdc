@@ -1,0 +1,314 @@
+---
+description: Always-applied ZerotierB routing, architecture, and safety rules
+alwaysApply: true
+---
+
+# ZerotierB — Agent Rules
+
+This file is the always-on entry (`.cursor/rules/general.mdc`). Domain playbooks
+live beside it as `.cursor/rules/*.mdc`. Invocable workflows live in
+`.cursor/skills/*/SKILL.md`.
+
+**`.cursor/rules/` is the sole source of truth for rules.** Do not recreate a
+parallel rules tree elsewhere.
+
+**Hub → spoke (hard):** this file is the hub. Domain playbooks are spokes.
+Do not collapse VpnService / libzt / Shizuku / Room / Compose detail into this
+file — route via the tables below. New spokes must be added to the Routing Map
+and the Problem Class table.
+
+---
+
+# Karpathy Behavioral Guidelines
+
+These guidelines apply **at all times** when coding in an agentic environment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- If you write 200 lines and it could be 50, rewrite it.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- Remove imports/variables/functions that YOUR changes made unused.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+For multi-step tasks, state a brief plan with verification steps:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+
+Name the **capability layer** you are advancing so work stays ordered.
+
+---
+
+## CRITICAL: Read Rules Before You Act
+
+1. **Read before you act.** Before editing or proposing a change, read the
+   matching rule file(s) in `.cursor/rules/`.
+2. **This file always applies.**
+3. **Rules override defaults.** If a rule conflicts with your instincts, the
+   rule wins.
+4. **If no rule covers the situation, stop and ask** rather than guessing.
+
+### Routing Map — Which Domain Rule To Read
+
+| When you are working on... | Read and follow |
+| -------------------------- | --------------- |
+| ConnectionOrchestrator, RuntimePlan, global/AUTO modes, exclusive stack swap | `.cursor/rules/connection-orchestrator.mdc` |
+| Physical Wi-Fi / cellular / other classification, debounce | `.cursor/rules/android-connectivity.mdc` |
+| JNI `Node`, TUN, `ZerotierBVpnService` | `.cursor/rules/android-vpn.mdc` |
+| ZeroTier JNI SDK types, identity files, `networks.d` | `.cursor/rules/zerotier-jni.mdc` |
+| libzt, `ZeroTierSocket`, userspace proxy path | `.cursor/rules/libzt.mdc` |
+| `Settings.Global.HTTP_PROXY`, `WRITE_SECURE_SETTINGS` | `.cursor/rules/android-http-proxy.mdc` |
+| Shizuku `pm grant` | `.cursor/rules/shizuku.mdc` |
+| Room entities, DAOs, migrations | `.cursor/rules/room.mdc` |
+| Jetpack Compose UI | `.cursor/rules/compose.mdc` |
+| Kotlin language, unit tests, coroutines | `.cursor/rules/kotlin.mdc` |
+| Anything else or unsure | this file + ask |
+
+When a task spans multiple areas, read every applicable rule file before starting.
+
+---
+
+## Project Architecture
+
+- **Product**: ZerotierB
+- **Shape**: Android application (`com.brukb.zerotier`) — one process, two exclusive ZeroTier stacks
+- **Platforms**: Android 8.0+ (API 26), `compileSdk` / `targetSdk` 35
+- **Primary language**: Kotlin 2.2, JVM 17
+- **Build / verify**: `make verify` → `./gradlew :app:lintDebug :app:testDebugUnitTest :core:testDebugUnitTest :app:assembleDebug`
+
+```
+ZerotierBApplication
+  ConnectionOrchestrator (mutex, RuntimePlan)
+    ├── ProxyModeService   (libzt + HttpProxyServer 127.0.0.1)
+    └── ZerotierBVpnService (JNI Node + TUN)
+AppPreferences.globalMode: OFF | PROXY | VPN | AUTO
+LinkProfile (Wi-Fi SSID / per-SIM / Other): OFF | PROXY | VPN
+ZerotierBNetwork: enabled + pin-main + createdAt + routePriority — no PROXY/VPN chip
+```
+
+**Spec of record for dual-mode:** [`docs/PROXY-VPN-PLAN.md`](../../docs/PROXY-VPN-PLAN.md).
+**Delivery sequence:** [`planning/phases/INDEX.md`](../../planning/phases/INDEX.md).
+
+Today the tree is VPN-only (JNI). Dual-mode lands through INDEX tasks. Do not run libzt `Node` and JNI `Node` at the same time. Share `filesDir` identity. HTTP proxy binds **127.0.0.1 only**.
+
+### Inspiration sources
+
+- In-tree JNI client: `app/src/main/java/com/brukb/zerotier/vpn/`
+- Archived libzt proxy: git branch `archive/proxy-mode` (`com.zerotier.pylon`)
+- Spec: `docs/PROXY-VPN-PLAN.md`
+
+### Build & Run
+
+```bash
+make verify          # lint + unit tests + assembleDebug
+make install-hooks   # lefthook pre-commit → make verify
+./gradlew :app:installDebug
+```
+
+---
+
+## Delivery Principles
+
+**MVP sequence of record:** [`planning/phases/INDEX.md`](../../planning/phases/INDEX.md).
+Use `/task-1-plan` → `/task-2-execute` → `/task-3-complete`. Do not skip layers.
+
+### Layered build order
+
+See [`planning/phases/INDEX.md`](../../planning/phases/INDEX.md) for the
+current layered build order and task sequence.
+
+Wire features in dependency order. **Stop at a failed verification.** Do not
+advance to the next layer on a broken base.
+
+### Atomic work + verification gates
+
+Prefer small, independently checkable units. Before calling a chunk done, run
+`make verify`.
+
+### Model split: expensive plan → cheap execute
+
+Use a **large / expensive** model for `/task-1-plan` (and bootstrap / hard
+dialectic), and a **smaller / faster / cheaper** model for `/task-2-execute`
+and usually `/task-3-complete`.
+
+**Plan handoff bar:** `/task-1-plan` must write an Execution plan detailed
+enough that a **lesser agent** can implement it without rediscovering
+architecture, guessing file paths, or inventing design. Prefer:
+
+- Concrete files/packages to create or edit
+- Function/type/API shapes or signatures when non-obvious
+- Ordered steps with `→ verify:` checks
+- Explicit test cases to add
+- Exact verify/lint commands
+- Risks, pitfalls, and "do not" edges
+
+If the plan is only high-level ("wire the handler", "add tests"), it is
+**incomplete** — deepen it before marking it planned.
+
+---
+
+## Safety / Workflow Rails
+
+NEVER do these without explicit user approval:
+
+- Modify `.cursor/rules/` files (except via `/dialectic-of-cognition`)
+- Commit or push to git **outside** `/task-3-complete` (and never push unless `/task-3-complete … --push`)
+- Force-push, rewrite shared history, or push secrets
+- Bind the HTTP proxy on `0.0.0.0` or any non-loopback address
+- Start libzt and JNI ZeroTier nodes concurrently, or copy `identity.secret` into a second process
+- Write APN `proxy=` / `port=` fields
+- Treat PROXY runtime as a security boundary (`blockOutside`, kill-switch)
+- Prompt `VpnService.prepare()` from a background `NetworkCallback` (notify instead)
+
+### Package managers / toolchain
+
+- Android Gradle Plugin + Kotlin via existing Gradle files. Do not bump AGP / `compileSdk` / Kotlin as drive-by work.
+- Add Shizuku / libzt AAR only in the INDEX task that needs them.
+- Java 17. Do not switch to Groovy `build.gradle` from Kotlin DSL.
+
+### Verification defaults
+
+- Prefer `make verify` after substantive edits
+- If verification fails, fix that layer — do not advance
+
+---
+
+## Rule Maintenance (Self-Evolving Rules)
+
+<!-- last-verified: 2026-08 -->
+
+Rules must improve over time. Follow the dialectic of cognition:
+
+> *From the particular to the general, then from the general to the particular.*
+
+**Operational harness:** invoke `/dialectic-of-cognition` (see
+`.cursor/skills/dialectic-of-cognition/SKILL.md`).
+
+**Write only to** `.cursor/rules/*.mdc`.
+
+**Trigger:** Apply this process when ANY of these are true:
+
+- Debugging took >5 minutes
+- External documentation was consulted
+- More than one corrective attempt was needed before the fix worked
+- The root cause was non-obvious from the error message alone
+
+Trivial fixes (typos, config values, one-line renames) should **NOT** trigger
+rule updates — they add noise without improving recognition.
+
+### 0. Abort gate — is this generalizable?
+
+Before extracting a principle, apply the one-sentence test: **can you state the
+rule without naming a specific file, function, class, variable, or endpoint?**
+If not, stop here — there is nothing to encode. The value stays in the diff.
+
+### 1. Particular → General (abstract)
+
+Extract the **class** of problem, not the instance.
+
+### 2. General → Particular (encode)
+
+Write into the appropriate `.cursor/rules/*.mdc`. A good entry answers:
+
+1. **What does it look like?** (symptoms)
+2. **What causes it?** (root pattern)
+3. **How do you fix it?** (actionable steps)
+
+```
+### `<Problem Class Name>`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `<observable>` | `<root pattern>` | `<actionable steps>` |
+
+<!-- last-verified: YYYY-MM -->
+```
+
+### 3. Verify — practice tests theory
+
+Would a cold-read AI recognize the symptom and apply the fix without
+re-investigation? If not, refine.
+
+### 4. Check for contradictions
+
+When a new principle conflicts with an old one for the same symptoms, encode
+the boundary condition — don't silently overwrite.
+
+### 5. Deduplicate before adding — prefer refinement over proliferation
+
+### 6. Rule decay — keep the knowledge base alive
+
+Add `<!-- last-verified: YYYY-MM -->`. Review entries older than 6 months when
+working in that domain.
+
+### 7. File size threshold — split before rules become unreadable
+
+If a `.cursor/rules/*.mdc` file exceeds ~550 lines after an edit, propose a
+split to the user. Never split without approval.
+
+### Dialectic examples (this domain)
+
+- AUTO classifies `activeNetwork` while our `VpnService` is up → `TRANSPORT_VPN` matches Other → mode flap. Encode: strip our VPN, use underlying Wi-Fi/cell.
+- Two ZeroTier nodes, one `identity.secret` → controller split-brain. Encode: exclusive start/stop + wait for UDP gone.
+- `HTTP_PROXY` set before bind → apps hit a dead port. Encode: listen, then `putString`.
+
+---
+
+## Routing Table — Problem Class → Rule File
+
+| Change type / Problem domain | Rule file |
+| ---------------------------- | --------- |
+| Mode resolve, stack mutex, main ZT selection | `.cursor/rules/connection-orchestrator.mdc` |
+| SSID / SIM / Other / debounce / VPN-underlay | `.cursor/rules/android-connectivity.mdc` |
+| TUN, VpnService, single-net VPN | `.cursor/rules/android-vpn.mdc` |
+| JNI Node, identity, join/leave | `.cursor/rules/zerotier-jni.mdc` |
+| libzt sockets, HTTP CONNECT proxy | `.cursor/rules/libzt.mdc` |
+| Global HTTP_PROXY, loopback bind | `.cursor/rules/android-http-proxy.mdc` |
+| Shizuku grant | `.cursor/rules/shizuku.mdc` |
+| Room schema / migrations | `.cursor/rules/room.mdc` |
+| Compose screens | `.cursor/rules/compose.mdc` |
+| Kotlin / unit tests | `.cursor/rules/kotlin.mdc` |
+| Cross-cutting / unknown | `.cursor/rules/general.mdc` |
+
+---
+
+## Skills Inventory
+
+| Skill | Path | Purpose |
+| ----- | ---- | ------- |
+| `/bootstrap-turboplan` | `.cursor/skills/bootstrap-turboplan/SKILL.md` | From goal → rules + phases + dep spokes + README + .gitignore + root verify gate |
+| `/task-1-plan` | `.cursor/skills/task-1-plan/SKILL.md` | Plan one phase task |
+| `/task-2-execute` | `.cursor/skills/task-2-execute/SKILL.md` | Implement one phase task |
+| `/task-3-complete` | `.cursor/skills/task-3-complete/SKILL.md` | Verify + dialectic + INDEX ✅ + commit (push only with `--push`) + manual test + next branch |
+| `/dialectic-of-cognition` | `.cursor/skills/dialectic-of-cognition/SKILL.md` | Encode session learnings into rules |
+| `/audit-rules` | `.cursor/skills/audit-rules/SKILL.md` | Read-only audit of rules/skills vs tree |
+| `/grill-me` | `.cursor/skills/grill-me/SKILL.md` | Interrogate an idea over a design tree until shared understanding; feeds /setup-tasks |
+| `/setup-tasks` | `.cursor/skills/setup-tasks/SKILL.md` | New feature → context → phase stubs appended to INDEX |

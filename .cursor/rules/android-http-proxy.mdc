@@ -1,0 +1,50 @@
+---
+description: Android system HTTP proxy (Settings.Global.HTTP_PROXY)
+globs: "**/SystemProxyManager.kt,**/proxy/**/*.kt"
+alwaysApply: false
+---
+
+# Android HTTP proxy rules
+
+## Scope
+
+- `Settings.Global.HTTP_PROXY`
+- `WRITE_SECURE_SETTINGS` (privileged)
+- Save/restore previous proxy value
+- Loopback-only listen then write Global
+
+Does **not** cover: Shizuku process (shizuku.mdc), APN editor (forbidden).
+
+## Invariants
+
+1. Enable order: bind 127.0.0.1 → `putString(HTTP_PROXY, "127.0.0.1:$port")`.
+2. Disable: restore saved value or `:0`.
+3. Force-stop may skip `onDestroy`. Next process start: if runtime ≠ PROXY, `disable()`.
+4. No APN `proxy`/`port` writes in v1.
+5. PROXY is convenience, not a leak-proof tunnel. Apps may ignore Global (HTTP/3, custom stacks).
+
+## External docs
+
+**Docs (if stuck):** https://developer.android.com/reference/android/provider/Settings.Global#HTTP_PROXY
+
+Permission: `android.permission.WRITE_SECURE_SETTINGS`
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Dead proxy after crash`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Browser hangs on all HTTP | Global still points at old port | `onDestroy`/`onTaskRemoved` disable; boot/start clear if not PROXY |
+
+<!-- last-verified: 2026-08 -->
+
+### `SecurityException on putString`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Proxy "on" in UI but Global unchanged | No `WRITE_SECURE_SETTINGS` | Shizuku or ADB grant; listen still; UI "system proxy inactive" |
+
+<!-- last-verified: 2026-08 -->

@@ -1,87 +1,130 @@
-# ZeroTier-Pylon
+# 🚀 ZerotierB
 
-Android app that runs a ZeroTier node via libzt and exposes network access through a local HTTP proxy (system-wide) and optional gated SOCKS5 proxy.
-
-## libzt patches (submodule)
-
-This project patches `twisteroidambassador/libzt` to expose:
-
-- Managed routes via `zts_core_query_route_cidr`
-- Assigned addresses via `zts_core_query_addr_cidr`
-- Network DNS via `zts_core_query_dns_*`
-- Per-network settings via `zts_net_set_settings` (allowManaged/Default/Global)
-
-Rebuild after pulling libzt changes:
-
-```bash
-./scripts/build-libzt.sh
+```text
+ _____              _   _           ____
+|__  /___ _ __ ___ | |_(_) ___ _ __| __ )
+  / // _ \ '__/ _ \| __| |/ _ \ '__|  _ \
+ / /|  __/ | | (_) | |_| |  __/ |  | |_) |
+/____\___|_|  \___/ \__|_|\___|_|  |____/
 ```
 
-Requires Java 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk`).
+## Summary
 
-Uses NDK r28 with 16 KB page-size ELF alignment for `libzt.so` (`ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`).
+ZerotierB is an Android ZeroTier client. Today it is a JNI `VpnService` with one TUN and many joined networks. The target is two **exclusive** runtimes: a **loopback HTTP proxy** (libzt, many ZT nets, for Calibre-web / Immich-in-a-browser) and a **full VPN** (JNI, **one** main ZT net). A global **AUTO** mode picks PROXY vs VPN from the **physical** link (Wi-Fi SSID, SIM, Other)—not from a per-ZT chip.
 
-## Features
+Bootstrapped with **[Turboplan](https://github.com/commoddity/turboplan)** (agent rules + phased delivery). Product spec: [`docs/PROXY-VPN-PLAN.md`](docs/PROXY-VPN-PLAN.md).
 
-- Full ZeroTier node in userspace (no VPN/tun interface)
-- Join multiple ZeroTier networks with runtime join/leave
-- Managed routes from controller (when allowManaged enabled)
-- Auto network DNS from controller (when allowDns enabled)
-- Local HTTP proxy for Android system proxy setting
-- Optional SOCKS5 proxy (disabled by default)
-- Separate HTTP proxy toggle while node keeps running
-- Per-network options: DNS, allowManaged, allowDefault, allowGlobal, blockOutside, allow/deny rules
-- Shizuku one-tap grant for WRITE_SECURE_SETTINGS
-- Start on boot option
+## Table of Contents
 
-## Prerequisites
+- [Summary](#summary)
+- [❗ The problem](#-the-problem)
+- [🛠️ The fix (target)](#️-the-fix-target)
+- [📊 Status](#-status)
+- [📂 Repo layout](#-repo-layout)
+- [📚 Dependencies & docs](#-dependencies--docs)
+- [🔁 Building with Turboplan](#-building-with-turboplan)
+- [🔨 Build / verify](#-build--verify)
+- [🔒 Security / invariants](#-security--invariants)
+- [📜 License / attribution](#-license--attribution)
 
-- Android SDK at `/opt/android-sdk` (or update `local.properties`)
-- JDK 17+
-- CMake, NDK (for building libzt)
+---
 
-## Build libzt AAR
+## ❗ The problem
 
-```bash
-cd libzt
-git submodule update --init --recursive
-export ANDROID_HOME=/opt/android-sdk
-export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358
-./build.sh android-aar release
+| What you try | What happens |
+| ------------ | ------------ |
+| Browse Calibre / Immich on several ZT nets | Full VPN is heavy; Android is one-VPN-per-device |
+| Need SSH / SMB / non-HTTP on ZT | HTTP proxy cannot carry that; need TUN |
+| Home Wi-Fi vs LTE vs USB | Want PROXY vs VPN by **physical** network, not by toggling each ZT id |
+
+## 🛠️ The fix (target)
+
+- **PROXY:** libzt + HTTP CONNECT on `127.0.0.1` + optional `Settings.Global.HTTP_PROXY`. All enabled ZT nets. Not a leak-proof tunnel.
+- **VPN:** existing JNI TUN, **main** ZT net only (`isPinnedMain` or oldest `createdAt`).
+- **AUTO:** debounce physical link → `LinkProfile` mode OFF/PROXY/VPN. Unknown SSID → PROXY, no auto-save.
+- **Never** run both stacks at once. Same `identity.secret`.
+
+```text
+physical link → classifier → RuntimePlan
+                    ├── PROXY → libzt HTTP 127.0.0.1 → maybe Global HTTP_PROXY
+                    ├── VPN   → JNI TUN (main net only)
+                    └── OFF   → restore proxy, stop both
 ```
 
-Output: `libzt/dist/android-any-android-release/libzt-release.aar`
+## 📊 Status
 
-`zerotier.properties` points to this AAR.
+| Area | State |
+| ---- | ----- |
+| 🧭 Agent rules (`.cursor/rules/`) | Bootstrapped |
+| 📋 MVP plan (`planning/phases/`) | Seeded — [INDEX](planning/phases/INDEX.md) T01–T10 |
+| 🛠️ Product code | VPN-only JNI client ships; dual-mode not built |
+| 🧪 Verify | `make verify` (Android lint + unit tests + assembleDebug) |
 
-## Build app
+## 📂 Repo layout
 
-```bash
-./gradlew assembleDebug
+| Path | For |
+| ---- | --- |
+| [`README.md`](README.md) | 👤 Humans (this file) |
+| [`docs/PROXY-VPN-PLAN.md`](docs/PROXY-VPN-PLAN.md) | 📘 Dual-mode contract |
+| [`.cursor/rules/`](.cursor/rules/) | 📜 Conventions for coding agents |
+| [`.cursor/skills/`](.cursor/skills/) | 🧩 plan / execute / complete / … |
+| [`planning/phases/`](planning/phases/) | 🗂️ MVP sequence of record |
+| [`app/`](app/) | Android application |
+| [`core/`](core/) | ZeroTier JNI (`com.zerotier.sdk`) |
+| [`libzt/`](libzt/) | libzt tree (not wired into `:app` yet) |
+| [`archive/proxy-mode` (git branch)](docs/PROXY-VPN-PLAN.md) | Old Pylon HTTP/SOCKS + libzt |
+
+## 📚 Dependencies & docs
+
+| Dependency | Role | Docs | Agent rules |
+| ---------- | ---- | ---- | ----------- |
+| Android VpnService | TUN VPN | [VpnService](https://developer.android.com/reference/android/net/VpnService) | [`android-vpn.mdc`](.cursor/rules/android-vpn.mdc) |
+| ZeroTier JNI | Node + frames | [ZeroTier docs](https://docs.zerotier.com/) + `externals/ZeroTierOne/java/` | [`zerotier-jni.mdc`](.cursor/rules/zerotier-jni.mdc) |
+| libzt | Userspace sockets | in-tree `libzt/README.md` | [`libzt.mdc`](.cursor/rules/libzt.mdc) |
+| Settings.Global.HTTP_PROXY | System HTTP proxy | [HTTP_PROXY](https://developer.android.com/reference/android/provider/Settings.Global#HTTP_PROXY) | [`android-http-proxy.mdc`](.cursor/rules/android-http-proxy.mdc) |
+| Shizuku | Grant `WRITE_SECURE_SETTINGS` | [Shizuku README](https://github.com/RikkaApps/Shizuku/blob/master/README.md) | [`shizuku.mdc`](.cursor/rules/shizuku.mdc) |
+| ConnectivityManager | Physical link | [NetworkCallback](https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback) | [`android-connectivity.mdc`](.cursor/rules/android-connectivity.mdc) |
+| Room 2.6 | Local DB | [Room migrations](https://developer.android.com/training/data-storage/room/migrating-db-versions) | [`room.mdc`](.cursor/rules/room.mdc) |
+| Jetpack Compose | UI | [Compose](https://developer.android.com/jetpack/compose/documentation) | [`compose.mdc`](.cursor/rules/compose.mdc) |
+| Kotlin 2.2 / JVM 17 | Language | [kotlinlang.org](https://kotlinlang.org/docs/home.html) | [`kotlin.mdc`](.cursor/rules/kotlin.mdc) |
+| Orchestrator (ours) | Mode swap | spec §4–9 | [`connection-orchestrator.mdc`](.cursor/rules/connection-orchestrator.mdc) |
+
+## 🔁 Building with [Turboplan](https://github.com/commoddity/turboplan)
+
+Work proceeds one phase task at a time. Full methodology:
+[github.com/commoddity/turboplan](https://github.com/commoddity/turboplan).
+
+```
+  📝 /task-1-plan TXX
+        ↓
+  🛠️  /task-2-execute TXX
+        ↓
+  ✅ /task-3-complete TXX → commit local (add `--push` to push) + Manual test → next <stub-stem> branch
 ```
 
-## System proxy permission
+See [`planning/phases/INDEX.md`](planning/phases/INDEX.md).
 
-Grant once via ADB:
+## 🔨 Build / verify
+
+Requires JDK 17, Android SDK (`ANDROID_HOME`), NDK 25.1.8937393 (JNI).
 
 ```bash
-adb shell pm grant com.zerotier.pylon android.permission.WRITE_SECURE_SETTINGS
+make verify          # lintDebug + unit tests + assembleDebug
+make install-hooks   # lefthook: pre-commit → make verify
+./gradlew :app:installDebug
 ```
 
-Or use the in-app **Grant via Shizuku** button (requires Shizuku installed and running).
+Toolchain (this clone): **Kotlin 2.0.21**, **AGP 8.7.3**, **Compose BOM 2024.12.01**, **compileSdk 35**, **minSdk 26**. Dual-mode work must not bump these as drive-bys. Keep Compose BOM aligned with AGP/Kotlin — a newer BOM can crash Android Lint detectors.
 
-## Usage
+## 🔒 Security / invariants
 
-1. Add a ZeroTier network ID (16 hex chars)
-2. Grant `WRITE_SECURE_SETTINGS`
-3. Toggle Pylon on
-4. Authorize the displayed node ID in your ZeroTier controller
-5. Traffic using the system HTTP proxy routes through the local proxy into ZeroTier networks
+- HTTP proxy **127.0.0.1 only** — never `0.0.0.0`.
+- PROXY is **not** a kill-switch. Apps may ignore `HTTP_PROXY` (HTTP/3, custom stacks).
+- One ZeroTier identity; never two live nodes.
+- `WRITE_SECURE_SETTINGS` via Shizuku or ADB — not Play-grantable.
+- No APN `proxy=` writes in v1.
+- Do not `VpnService.prepare()` from `NetworkCallback`.
 
-## Architecture
+## 📜 License / attribution
 
-- `PylonService` — foreground service orchestrating node, proxies, system proxy
-- `ZeroTierNodeManager` — libzt node lifecycle
-- `HttpProxyServer` / `Socks5ProxyServer` — local proxies
-- `RouteResolver` — routes destinations through libzt or OS stack
-- `SystemProxyManager` — manages `Settings.Global.HTTP_PROXY`
+ZeroTier core is GPLv3. App Kotlin/Java follows the same license as upstream ZeroTierOne JNI usage. Archived proxy code: branch `archive/proxy-mode`, tag `v0.1.0-proxy`.

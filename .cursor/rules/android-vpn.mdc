@@ -1,0 +1,56 @@
+---
+description: Android VpnService, TUN builder, single-network VPN runtime
+globs: "**/vpn/**/*.kt"
+alwaysApply: false
+---
+
+# Android VpnService rules
+
+## Scope
+
+- `ZerotierBVpnService`, `TunTapAdapter`, `VpnService.Builder`
+- Single-net filter when orchestrator runtime is VPN
+- Foreground type `connectedDevice`, `protect()` on UDP
+- Always-on VPN vs AUTO (document fight; do not silently disable OS always-on)
+
+Does **not** cover: JNI Node lifecycle details (zerotier-jni), orchestrator mutex.
+
+## Invariants
+
+1. Android allows one VPN. Establishing TUN implies we own it.
+2. VPN runtime: `rebuildVpn()` only the main network's addrs/routes/DNS.
+3. `addDisallowedApplication(packageName)` stays so JNI UDP is not captured.
+4. `VpnService.prepare()` only from an Activity, never from `NetworkCallback`.
+5. Stop must be awaitable (orchestrator swap).
+
+## External docs
+
+**Docs (if stuck):** https://developer.android.com/reference/android/net/VpnService
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `NotificationPermission on FGS update`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Lint `NotificationPermission` on `NotificationManager.notify` despite manifest `POST_NOTIFICATIONS` | Lint requires a runtime check for `notify()` when targetSdk ≥ 33; declaration alone is not enough | For VPN FGS content updates, call `startForeground` again (same notification id) instead of `notify`. Keep `POST_NOTIFICATIONS` in the manifest for non-FGS posts / future UI. |
+
+<!-- last-verified: 2026-08 -->
+
+### `Multi-net leak in VPN runtime`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Second ZT net still on TUN | `rebuildVpn()` still walks all OK configs | Filter to orchestrator `vpnNetworkId`; `leave()` others on Node |
+
+<!-- last-verified: 2026-08 -->
+
+### `Background VPN prompt`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| AUTO wants VPN, dialog never shows / crashes | `prepare()` from FGS/callback | Stay PROXY/OFF; sticky "Grant VPN"; Activity-only prepare |
+
+<!-- last-verified: 2026-08 -->

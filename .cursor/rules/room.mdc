@@ -1,0 +1,38 @@
+---
+description: Room database, entities, DAOs, migrations
+globs: "**/data/**/*.kt"
+alwaysApply: false
+---
+
+# Room rules
+
+## Scope
+
+- `AppDatabase`, `ZerotierBNetwork`, `LinkProfile`, DAOs, migrations
+- DataStore is **not** Room (`AppPreferences`) — keep modes there unless a task moves them
+
+Does **not** cover: Compose list UI.
+
+## Invariants
+
+1. Never bump `version` without a `Migration`. No silent `fallbackToDestructiveMigration` for shipped users (current code has fallback — dual-mode tasks should add real 2→3).
+2. `link_profiles` is physical links, not ZT nets.
+3. Pin-main: one row `isPinnedMain=1`. Clear others in the same transaction.
+4. `createdAt=0` sorts after real timestamps, then `networkId`.
+5. `exportSchema` may stay false until a task enables it; do not invent schema JSON.
+
+## External docs
+
+**Docs (if stuck):** https://developer.android.com/training/data-storage/room/migrating-db-versions
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Destructive fallback wipes nets`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| User networks gone after upgrade | `fallbackToDestructiveMigration()` | Add `MIGRATION_2_3` for new columns/tables |
+
+<!-- last-verified: 2026-08 -->

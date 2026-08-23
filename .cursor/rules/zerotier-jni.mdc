@@ -1,0 +1,38 @@
+---
+description: ZeroTier JNI SDK (com.zerotier.sdk.Node), identity, join/leave
+globs: "**/vpn/**/*.kt,**/core/**"
+alwaysApply: false
+---
+
+# ZeroTier JNI rules
+
+## Scope
+
+- `com.zerotier.sdk.Node` and callbacks in `:core`
+- `ZeroTierDataStore` files under `context.filesDir`
+- Join/leave, `networks.d`, UDP via `UdpCom` (port 9994, `protect()`)
+
+Does **not** cover: libzt (`ZeroTierSocket`) — that is `libzt.mdc`.
+
+## Invariants
+
+1. One identity directory shared with libzt. Never two live nodes on it.
+2. `allowManaged` / `allowDefault` / `allowGlobal` / `allowDns` map to VPN builder **and** (later) proxy route filter.
+3. Network IDs are 16 hex digits; normalize before join.
+4. Do not bump ZeroTierOne / NDK as drive-by.
+
+## External docs
+
+**Docs (if stuck):** in-tree `externals/ZeroTierOne/java/` and https://docs.zerotier.com/
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Join persisted after leave`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Non-main net still OK after VPN swap | Membership file left in `networks.d` | Explicit `leave()` + omit from rebuild |
+
+<!-- last-verified: 2026-08 -->

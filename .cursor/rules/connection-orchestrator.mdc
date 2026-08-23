@@ -1,0 +1,48 @@
+---
+description: ConnectionOrchestrator, RuntimePlan, exclusive stack swap, main ZT
+globs: "**/connection/**/*.kt,**/ConnectionOrchestrator.kt,**/RuntimePlan.kt"
+alwaysApply: false
+---
+
+# Connection orchestrator rules
+
+## Scope
+
+- Global mode `OFF | PROXY | VPN | AUTO` vs link chips `OFF | PROXY | VPN`
+- Resolving `RuntimePlan` (which stack, which ZT nets)
+- Exclusive start/stop of libzt vs JNI
+- Main ZeroTier network: `isPinnedMain` else oldest `createdAt` among enabled
+
+Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vpn), HTTP bind (android-http-proxy).
+
+## Invariants
+
+1. At most one ZeroTier node is live. Swap = stop A, wait dead, start B.
+2. PROXY joins every `isEnabled` ZT network. VPN joins **only** main; `leave()` all others.
+3. AUTO with no uplink → runtime OFF. Global PROXY/VPN ignore link and stay requested.
+4. Missing VPN consent: do not background-prompt. Stay PROXY or OFF + notification.
+5. `ZerotierBNetwork` has no PROXY/VPN chip.
+
+## External docs
+
+**Docs (if stuck):** [`docs/PROXY-VPN-PLAN.md`](../../docs/PROXY-VPN-PLAN.md) §4–§9
+
+- last consulted: 2026-08
+
+## Problem classes
+
+### `Vpn overlay classified as Other`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| AUTO flaps PROXY↔VPN when VPN is up | `activeNetwork` is `TRANSPORT_VPN` | Strip our VPN; classify underlying Wi-Fi/cell/other |
+
+<!-- last-verified: 2026-08 -->
+
+### `Split-brain node`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Same node ID, two paths, peers confused | libzt and JNI both opened `identity.secret` | Mutex; wait UDP/lock files gone; never two processes on same identity |
+
+<!-- last-verified: 2026-08 -->

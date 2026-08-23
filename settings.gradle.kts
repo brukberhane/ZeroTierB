@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ZeroTier-Pylon"
-include(":app")
+rootProject.name = "ZerotierB"
+include(":app", ":core")
