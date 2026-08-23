@@ -16,6 +16,7 @@ import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.proxy.ProxyServiceState
 import com.brukb.zerotier.system.ShizukuPermissionHelper
+import com.brukb.zerotier.system.BatteryOptimizationHelper
 import com.brukb.zerotier.vpn.VpnServiceState
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,9 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class MainUiState(
     val globalMode: GlobalMode = GlobalMode.OFF,
@@ -89,6 +88,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showLinks = MutableStateFlow(false)
     val showLinks: StateFlow<Boolean> = _showLinks
 
+    private val _showBatteryOptDialog = MutableStateFlow(false)
+    val showBatteryOptDialog: StateFlow<Boolean> = _showBatteryOptDialog
+
+    private val _grantError = MutableStateFlow<String?>(null)
+    val grantError: StateFlow<String?> = _grantError
+
     fun setShowLinks(show: Boolean) {
         _showLinks.value = show
     }
@@ -96,7 +101,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setGlobalMode(mode: GlobalMode) {
         viewModelScope.launch {
             app.orchestrator.applyGlobalMode(mode)
+            if (shouldPromptBatteryOpt(mode)) {
+                _showBatteryOptDialog.value = true
+            }
         }
+    }
+
+    fun dismissBatteryOptDialog() {
+        viewModelScope.launch {
+            app.preferences.setBatteryOptPrompted()
+            _showBatteryOptDialog.value = false
+        }
+    }
+
+    private suspend fun shouldPromptBatteryOpt(mode: GlobalMode): Boolean {
+        if (mode != GlobalMode.PROXY && mode != GlobalMode.AUTO) return false
+        if (app.preferences.hasBatteryOptPrompted()) return false
+        return !BatteryOptimizationHelper.isIgnoringBatteryOptimizations(getApplication())
     }
 
     fun togglePinnedMain(network: ZerotierBNetwork) {
@@ -196,13 +217,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun grantSecureSettings() {
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                ShizukuPermissionHelper.grantWriteSecureSettings(getApplication())
+            _grantError.value = null
+            when (val request = ShizukuPermissionHelper.requestPermission()) {
+                is ShizukuPermissionHelper.PermissionRequest.Error -> {
+                    _grantError.value = request.message
+                }
+                ShizukuPermissionHelper.PermissionRequest.Requested -> {
+                    // Async: Shizuku dialog result listener in ZerotierBApplication
+                    // runs the grant + orchestrator refresh.
+                }
+                ShizukuPermissionHelper.PermissionRequest.AlreadyGranted -> {
+                    runGrant()
+                }
             }
-            if (result.isSuccess) {
-                app.orchestrator.invalidateAppliedPlan()
-                app.orchestrator.refresh()
-            }
+        }
+    }
+
+    private suspend fun runGrant() {
+        val result = ShizukuPermissionHelper.grantWriteSecureSettings(getApplication())
+        if (result.isSuccess) {
+            app.orchestrator.invalidateAppliedPlan()
+            app.orchestrator.refresh()
+        } else {
+            _grantError.value = result.exceptionOrNull()?.message ?: "Grant failed"
         }
     }
 

@@ -1,7 +1,6 @@
 package com.brukb.zerotier.ui
 
 import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -65,6 +64,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val showAdd by viewModel.showAddNetwork.collectAsState()
     val selected by viewModel.selectedNetwork.collectAsState()
     val showLinks by viewModel.showLinks.collectAsState()
+    val showBatteryOpt by viewModel.showBatteryOptDialog.collectAsState()
+    val grantError by viewModel.grantError.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? MainActivity
@@ -155,6 +156,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     GrantSecureSettingsCard(
                         shizukuAvailable = ShizukuPermissionHelper.isAvailable(),
                         adbCommand = SystemProxyManager.adbGrantCommand(context.packageName),
+                        error = grantError,
                         onShizukuGrant = { viewModel.grantSecureSettings() },
                     )
                 }
@@ -214,20 +216,38 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onStartOnBoot = viewModel::setStartOnBoot,
             )
         }
+        if (showBatteryOpt) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissBatteryOptDialog() },
+                title = { Text(stringResource(R.string.battery_opt_title)) },
+                text = { Text(stringResource(R.string.battery_opt_body)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.dismissBatteryOptDialog()
+                        activity?.openBatteryOptimizationSettings()
+                    }) {
+                        Text(stringResource(R.string.battery_opt_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissBatteryOptDialog() }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
+        }
     }
 }
 
 private fun requestLinkPermissions(
     launcher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
 ) {
-    val perms = if (Build.VERSION.SDK_INT >= 33) {
-        arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES)
-    } else {
-        arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        )
-    }
+    // SSID is location-derivable: NEARBY_WIFI_DEVICES never unredacts
+    // WifiInfo.getSSID() (verified on Samsung Android 16). Fine location required.
+    val perms = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    )
     launcher.launch(perms)
 }
 
@@ -380,13 +400,20 @@ private fun SettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_title)) },
         text = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.start_on_boot))
-                Switch(checked = startOnBoot, onCheckedChange = onStartOnBoot)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.start_on_boot))
+                    Switch(checked = startOnBoot, onCheckedChange = onStartOnBoot)
+                }
+                Text(
+                    stringResource(R.string.start_on_boot_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = {

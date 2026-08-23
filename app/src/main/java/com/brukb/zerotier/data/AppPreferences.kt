@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.GlobalModeMigrate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("zerotierb_prefs")
@@ -22,6 +23,7 @@ class AppPreferences(private val context: Context) {
     private val savedHttpProxyKey = stringPreferencesKey("saved_http_proxy")
     private val lastHttpProxyPortKey = intPreferencesKey("last_http_proxy_port")
     private val linkDebounceMsKey = intPreferencesKey("link_debounce_ms")
+    private val batteryOptPromptedKey = booleanPreferencesKey("battery_opt_prompted")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -63,6 +65,15 @@ class AppPreferences(private val context: Context) {
     suspend fun setLinkDebounceMs(ms: Int) {
         val clamped = ms.coerceIn(MIN_LINK_DEBOUNCE_MS, MAX_LINK_DEBOUNCE_MS)
         context.dataStore.edit { it[linkDebounceMsKey] = clamped }
+    }
+
+    suspend fun hasBatteryOptPrompted(): Boolean {
+        val prefs = context.dataStore.data.first()
+        return prefs[batteryOptPromptedKey] ?: false
+    }
+
+    suspend fun setBatteryOptPrompted() {
+        context.dataStore.edit { it[batteryOptPromptedKey] = true }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

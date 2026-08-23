@@ -85,8 +85,11 @@ class LinkClassifier(
     @Suppress("DEPRECATION")
     private fun readSsid(caps: NetworkCapabilities): String? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // transportInfo WifiInfo is location-redacted; NEARBY_WIFI_DEVICES
+            // does not unredact it. Fall through to WifiManager when redacted.
             val info = caps.transportInfo as? WifiInfo
-            if (info != null) return info.ssid
+            val fromCaps = SsidNormalizer.normalize(info?.ssid)
+            if (fromCaps != null) return fromCaps
         }
         val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
         return wifi?.connectionInfo?.ssid

@@ -26,7 +26,8 @@
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
     <string name="settings_title">Settings</string>
-    <string name="start_on_boot">Start on boot</string>
+    <string name="start_on_boot">Restore mode on boot</string>
+    <string name="start_on_boot_hint">Re-applies PROXY, VPN, or AUTO after reboot. OFF stays off.</string>
     <string name="links_title">Links</string>
     <string name="current_link">Current link</string>
     <string name="save_ssid">Save SSID</string>
@@ -40,4 +41,7 @@
     <string name="grant_body">Grant WRITE_SECURE_SETTINGS so apps use 127.0.0.1:port automatically.</string>
     <string name="grant_shizuku">Grant via Shizuku</string>
     <string name="copy_adb">Copy ADB command</string>
+    <string name="battery_opt_title">Disable battery optimization</string>
+    <string name="battery_opt_body">Proxy mode runs as a background service. Allow unrestricted battery use so OEMs do not stop it when the app is swiped away.</string>
+    <string name="battery_opt_action">Open settings</string>
 </resources>

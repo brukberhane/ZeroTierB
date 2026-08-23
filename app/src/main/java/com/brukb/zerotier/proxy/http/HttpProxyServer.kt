@@ -17,6 +17,7 @@ import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -36,6 +37,10 @@ class HttpProxyServer(
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
+        // A previous service instance may have left its listener bound
+        // (stopProxy stall); close it so only one accept loop is live.
+        activeServer?.takeUnless { it === this }?.stop()
+        activeServer = this
         serverSocket = ServerSocket()
         serverSocket?.reuseAddress = true
         serverSocket?.bind(InetSocketAddress("127.0.0.1", port))
@@ -70,11 +75,13 @@ class HttpProxyServer(
         acceptJob?.cancel()
         runCatching { serverSocket?.close() }
         serverSocket = null
+        if (activeServer === this) activeServer = null
         Log.i(TAG, "HTTP proxy stopped")
     }
 
     companion object {
         private const val TAG = "HttpProxyServer"
+        private var activeServer: HttpProxyServer? = null
     }
 }
 
@@ -153,7 +160,22 @@ class HttpProxySession(
             val online = ZeroTierNative.zts_node_is_online()
             val ready = if (netId != 0L) ZeroTierNative.zts_net_transport_is_ready(netId) else -1
             Log.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
-            ProxyConnection.fromZeroTierSocket(ZeroTierSocket(host, port))
+            // zts_connect takes an IP string only — resolve hostnames first.
+            val ip = ztConnectAddress(host, decision)
+                ?: throw IOException("No ZeroTier address for $host")
+            val family = if (ip.contains(':')) {
+                ZeroTierNative.ZTS_AF_INET6
+            } else {
+                ZeroTierNative.ZTS_AF_INET
+            }
+            val socket = ZeroTierSocket(family, ZeroTierNative.ZTS_SOCK_STREAM, 0)
+            try {
+                socket.connect(InetAddress.getByName(ip), port, ZT_CONNECT_TIMEOUT_MS)
+            } catch (e: Exception) {
+                runCatching { socket.close() }
+                throw e
+            }
+            ProxyConnection.fromZeroTierSocket(socket)
         } else {
             val socket = Socket()
             socket.connect(InetSocketAddress(host, port), 15_000)
@@ -161,10 +183,22 @@ class HttpProxySession(
         }
     }
 
+    private fun ztConnectAddress(host: String, decision: RouteDecision): String? {
+        val literal = host.all { it.isDigit() || it == '.' } || host.contains(':')
+        if (literal) return host
+        val addresses = dnsResolver.resolve(host)
+        return addresses.firstOrNull { addr ->
+            val ip = addr.hostAddress ?: return@firstOrNull false
+            routeResolver.resolveIpString(ip).let { it.useZeroTier && it.networkId == decision.networkId }
+        }?.hostAddress
+    }
+
     private fun relay(client: Socket, remote: ProxyConnection) {
+        // Half-close only during relay: closing the ZT socket while the sibling
+        // pump is blocked in zts_bsd_read aborts the process (destroyed mutex).
         val t1 = Thread {
             runCatching { pump(client.getInputStream(), remote.output) }
-            runCatching { remote.close() }
+            remote.shutdownOutput()
         }
         val t2 = Thread {
             runCatching { pump(remote.input, client.getOutputStream()) }
@@ -175,7 +209,7 @@ class HttpProxySession(
         t1.join()
         t2.join()
         runCatching { client.close() }
-        runCatching { remote.close() }
+        remote.close()
     }
 
     private fun pump(input: java.io.InputStream, output: OutputStream) {
@@ -233,5 +267,6 @@ class HttpProxySession(
 
     companion object {
         private const val TAG = "HttpProxySession"
+        private const val ZT_CONNECT_TIMEOUT_MS = 10_000
     }
 }

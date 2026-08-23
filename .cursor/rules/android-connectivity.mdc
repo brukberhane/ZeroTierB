@@ -42,7 +42,31 @@ SSID is location-restricted: https://developer.android.com/develop/connectivity/
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Every Wi-Fi is "unknown" | Missing `NEARBY_WIFI_DEVICES` / `ACCESS_FINE_LOCATION` | Request on AUTO or Links screen; banner; still default PROXY |
+| Every Wi-Fi is "unknown" | Missing `ACCESS_FINE_LOCATION` | Request on AUTO or Links screen; banner; still default PROXY |
+
+<!-- last-verified: 2026-08 -->
+
+### `NEARBY_WIFI_DEVICES does not unredact SSID`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `getSSID()` → `<unknown ssid>` despite `NEARBY_WIFI_DEVICES` granted (with or without `neverForLocation`, appop `allow`) | SSID is location-derivable; only `ACCESS_FINE_LOCATION` unredacts it (verified on Samsung Android 16) | Declare/request `ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`; drop `NEARBY_WIFI_DEVICES` |
+
+<!-- last-verified: 2026-08 -->
+
+### `transportInfo SSID redacted, connectionInfo works`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `NetworkCapabilities.transportInfo` (WifiInfo) SSID `<unknown ssid>` with permission granted | transportInfo WifiInfo stays location-redacted | Normalize transportInfo SSID; on null fall back to `WifiManager.connectionInfo.ssid` (`LinkClassifier.readSsid`) |
+
+<!-- last-verified: 2026-08 -->
+
+### `Background SSID redacted (foreground appop)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| SSID known in foreground, `WifiUnknown` from `NetworkCallback` in background | Fine-location appop is `foreground` ("While in use") — background reads rejected | Platform limit. Background SSID needs "Allow all the time" (Settings). Otherwise AUTO falls to Other profile in background. OPEN product decision: accept vs background-location vs SSID cache |
 
 <!-- last-verified: 2026-08 -->
 

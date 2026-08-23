@@ -13,6 +13,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.ProxyModeService
+import com.brukb.zerotier.system.BatteryOptimizationHelper
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import kotlinx.coroutines.launch
 
@@ -54,11 +55,13 @@ class MainActivity : ComponentActivity() {
             }
             ACTION_GRANT_SECURE -> {
                 Log.i(TAG, "adb debug: Shizuku grant WRITE_SECURE_SETTINGS")
-                val result = ShizukuPermissionHelper.grantWriteSecureSettings(this)
-                Log.i(
-                    TAG,
-                    if (result.isSuccess) "grant ok" else "grant failed: ${result.exceptionOrNull()?.message}",
-                )
+                lifecycleScope.launch {
+                    val result = ShizukuPermissionHelper.grantWriteSecureSettings(this@MainActivity)
+                    Log.i(
+                        TAG,
+                        if (result.isSuccess) "grant ok" else "grant failed: ${result.exceptionOrNull()?.message}",
+                    )
+                }
             }
             ACTION_APPLY_MODE -> {
                 val raw = intent.getStringExtra(EXTRA_MODE)
@@ -93,6 +96,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             (application as ZerotierBApplication).orchestrator.refresh()
         }
+    }
+
+    fun openBatteryOptimizationSettings() {
+        runCatching {
+            startActivity(BatteryOptimizationHelper.requestIgnoreIntent(this))
+        }.onFailure { Log.w(TAG, "battery opt intent failed", it) }
     }
 
     private fun requestVpnConsentOnly() {

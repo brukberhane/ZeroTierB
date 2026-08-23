@@ -69,3 +69,51 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 | Dual stack / UDP fight / refused start | JNI node still running | Refuse proxy start when VPN `isRunning`; `EXTRA_FORCE_DEBUG` only for dev JNI→libzt spike |
 
 <!-- last-verified: 2026-08 -->
+
+### `zts_node_stop SIGABRT (detach while running)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `Fatal signal 6` in `zts_node_stop`, abort "attempting to detach while still running code", thread `libzt-node` | libzt JNI wrapper calls `jvm->DetachCurrentThread()` on the **calling** thread; Java-managed threads with live frames abort ART | Patched in-tree: removed `java_detach_from_thread()` from `zts_node_stop`/`zts_node_free` in `libzt/src/bindings/java/JavaSockets.cxx`. Never call stop/free expecting the wrapper to detach a Java thread |
+
+<!-- last-verified: 2026-08 -->
+
+### `libzt patch not in APK`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `libzt/src` edit has no effect on device; `libzt.so` BuildId unchanged | App links **prebuilt AAR** `libzt/dist/android-any-android-release/libzt-release.aar`; `make verify` does not rebuild it | `cd libzt/pkg/android && ./gradlew :app:assembleRelease`, then `cp app/build/outputs/aar/libzt-release.aar ../../dist/android-any-android-release/`, then reinstall |
+
+<!-- last-verified: 2026-08 -->
+
+### `zts_node_start -2 on restart`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `zts_node_start failed: -2` after quick stop→start or double `ACTION_START` | Native node state is process-global; node still running (`ZTS_ERR_SERVICE`) | Treat `-2` as already-running success in `ZeroTierNodeManager.start`; serialize `startProxy`/`stopProxy` with `startStopMutex` in `ProxyModeService` |
+
+<!-- last-verified: 2026-08 -->
+
+### `stopProxy stalls after link loss`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Wi-Fi drop → apply OFF, but `http_proxy` stays set >10s, no `zts_node_stop` log; next start reuses node (-2) | Not isolated. `stopAndAwait` 10s timeout masks it; suspected libzt-node dispatcher queue blocked during link-down event flood | OPEN. Reproduce with full logcat; check `ZeroTierNodeManager` dispatcher queue and `stopAndAwait` timeout handling |
+
+<!-- last-verified: 2026-08 -->
+
+### `Close-while-reading aborts process (FORTIFY destroyed mutex)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| SIGABRT `pthread_mutex_lock called on a destroyed mutex` in `sys_arch_mbox_fetch` via `zts_bsd_read`; whole app dies, proxy port goes dead → `ERR_PROXY_CONNECTION_FAILED` | One thread closes a `ZeroTierSocket` while another thread is blocked in `zts_bsd_read`/`write` on the same fd — `zts_bsd_close` frees the lwip netconn and destroys its mbox mutexes | In duplex relays, **half-close only**: `shutdownOutput()` when a pump finishes; `close()` only after both pump threads joined. Never `close()` a ZT socket another thread may still be reading |
+
+<!-- last-verified: 2026-08 -->
+
+### `Short zts_bsd_write silently drops bytes`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Large uploads through ZT socket corrupt/truncate; small requests fine | `zts_bsd_write_offset` can return a short count (send buffer full); stock `ZeroTierOutputStream.write` ignores the return value | Loop on the return value until all bytes written (patched in-tree `ZeroTierOutputStream.write`; rebuild AAR per `libzt patch not in APK`) |
+
+<!-- last-verified: 2026-08 -->

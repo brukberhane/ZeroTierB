@@ -10,6 +10,8 @@ import com.brukb.zerotier.data.NetworkRepository
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.system.LinkObserver
+import com.brukb.zerotier.system.ShizukuPermissionHelper
+import rikka.shizuku.Shizuku
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +43,7 @@ class ZerotierBApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        registerShizukuListeners()
         database = AppDatabase.getInstance(this)
         networkRepository = NetworkRepository(database.networkDao())
         linkProfileRepository = LinkProfileRepository(database.linkProfileDao())
@@ -76,6 +79,26 @@ class ZerotierBApplication : Application() {
             }
             linkObserver.start()
         }
+    }
+
+    private fun registerShizukuListeners() {
+        runCatching {
+            Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
+                if (requestCode != ShizukuPermissionHelper.REQUEST_CODE) return@addRequestPermissionResultListener
+                if (grantResult != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    Log.w(TAG, "Shizuku permission denied")
+                    return@addRequestPermissionResultListener
+                }
+                appScope.launch {
+                    ShizukuPermissionHelper.grantWriteSecureSettings(this@ZerotierBApplication)
+                        .onSuccess {
+                            orchestrator.invalidateAppliedPlan()
+                            orchestrator.refresh()
+                        }
+                        .onFailure { Log.w(TAG, "grant after Shizuku permission failed", it) }
+                }
+            }
+        }.onFailure { Log.w(TAG, "Shizuku listener registration failed", it) }
     }
 
     companion object {

@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 class ProxyModeService : Service() {
@@ -44,6 +46,7 @@ class ProxyModeService : Service() {
     private var httpProxy: HttpProxyServer? = null
     private var nodeStarted = false
     private var networkStateJob: kotlinx.coroutines.Job? = null
+    private val startStopMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -60,23 +63,24 @@ class ProxyModeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> scope.launch {
-                val joinIds = intent.getStringArrayExtra(EXTRA_JOIN_NETWORK_IDS)?.toList()
-                startProxy(intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false), joinIds)
+                startStopMutex.withLock {
+                    startProxy(intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false), joinIds(intent))
+                }
             }
-            ACTION_STOP -> scope.launch { stopProxy() }
+            ACTION_STOP -> scope.launch {
+                startStopMutex.withLock { stopProxy() }
+            }
         }
         return START_STICKY
     }
 
+    private fun joinIds(intent: Intent): List<String>? =
+        intent.getStringArrayExtra(EXTRA_JOIN_NETWORK_IDS)?.toList()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        scope.launch { stopProxy() }
-        super.onTaskRemoved(rootIntent)
-    }
-
     override fun onDestroy() {
-        scope.launch { stopProxy() }
+        scope.launch { startStopMutex.withLock { stopProxy() } }
         serviceJob.cancel()
         super.onDestroy()
     }
@@ -239,7 +243,7 @@ class ProxyModeService : Service() {
                 isRunning = false,
             )
         }
-        scope.launch { stopProxy() }
+        scope.launch { startStopMutex.withLock { stopProxy() } }
     }
 
     private fun updateState(block: ProxyServiceState.() -> ProxyServiceState) {

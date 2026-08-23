@@ -51,7 +51,14 @@ class ZeroTierNodeManager(
         runCatching {
             check(initialized.get()) { "Node not initialized" }
             val result = node.start()
-            check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
+            Log.i(TAG, "zts_node_start result=$result")
+            if (result == ZeroTierNative.ZTS_ERR_SERVICE) {
+                // Native node state is process-global; a previous service instance
+                // may have left it running. Reuse instead of tearing down.
+                Log.i(TAG, "node already running — reusing")
+            } else {
+                check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
+            }
 
             val online = withTimeoutOrNull(timeoutMs) {
                 while (!node.isOnline) {
@@ -73,7 +80,8 @@ class ZeroTierNodeManager(
 
     suspend fun stop(): Result<Unit> = withNode {
         runCatching {
-            node.stop()
+            val result = node.stop()
+            Log.i(TAG, "zts_node_stop result=$result")
             networkStatuses.clear()
             _state.value = ZtNodeState()
         }

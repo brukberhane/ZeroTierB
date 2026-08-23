@@ -25,6 +25,7 @@ import com.brukb.zerotier.R
 fun GrantSecureSettingsCard(
     shizukuAvailable: Boolean,
     adbCommand: String,
+    error: String? = null,
     onShizukuGrant: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -40,6 +41,13 @@ fun GrantSecureSettingsCard(
             )
             Button(onClick = onShizukuGrant, enabled = shizukuAvailable) {
                 Text(stringResource(R.string.grant_shizuku))
+            }
+            if (error != null) {
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

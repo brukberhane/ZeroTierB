@@ -3,6 +3,7 @@ package com.brukb.zerotier.system
 import android.content.Context
 import android.content.Intent
 import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.system.BootRestorePolicy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -13,7 +14,9 @@ class BootReceiver : android.content.BroadcastReceiver() {
         val app = context.applicationContext as ZerotierBApplication
         app.applicationScope.launch {
             try {
-                if (app.preferences.startOnBoot.first()) {
+                val startOnBoot = app.preferences.startOnBoot.first()
+                val globalMode = app.preferences.globalMode.first()
+                if (BootRestorePolicy.shouldRestore(startOnBoot, globalMode)) {
                     app.orchestrator.refresh()
                 }
             } finally {
