@@ -3,6 +3,7 @@ package com.brukb.zerotier
 import android.app.Application
 import com.brukb.zerotier.data.AppDatabase
 import com.brukb.zerotier.data.AppPreferences
+import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,9 @@ class ZerotierBApplication : Application() {
     lateinit var networkRepository: NetworkRepository
         private set
 
+    lateinit var linkProfileRepository: LinkProfileRepository
+        private set
+
     lateinit var preferences: AppPreferences
         private set
 
@@ -25,9 +29,12 @@ class ZerotierBApplication : Application() {
         super.onCreate()
         database = AppDatabase.getInstance(this)
         networkRepository = NetworkRepository(database.networkDao())
+        linkProfileRepository = LinkProfileRepository(database.linkProfileDao())
         preferences = AppPreferences(this)
         appScope.launch {
             networkRepository.migrateStoredNetworkIds()
+            preferences.migrateGlobalModeIfNeeded()
+            linkProfileRepository.seedOther()
         }
     }
 }

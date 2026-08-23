@@ -13,6 +13,8 @@ data class ZerotierBNetwork(
     val allowGlobal: Boolean = false,
     val allowDns: Boolean = true,
     val routePriority: Int = 0,
+    val createdAt: Long = 0L,
+    val isPinnedMain: Boolean = false,
 ) {
     fun networkIdLong(): Long = parseNetworkIdLong(networkId)
 

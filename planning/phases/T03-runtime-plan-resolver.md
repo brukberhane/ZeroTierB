@@ -92,3 +92,10 @@ Pure function: globalMode × classified link × vpnConsent × enabled nets → R
 ## Reality notes
 
 *(Amended by upstream `/task-3-complete` if prior tasks changed assumptions)*
+
+### From T02 close-out
+
+- `GlobalMode` / `LinkKind` / `LinkMode` in `data/model/Modes.kt`. Main selection: `MainNetworkSelector.select(enabled)`.
+- DataStore: `global_mode`, `saved_http_proxy`, `last_http_proxy_port`, `link_debounce_ms` (clamp 3–15s). Absent `global_mode` migrates from `start_on_boot` → VPN.
+- Room v3: `createdAt`, `isPinnedMain`, `link_profiles` + `LinkProfileRepository.upsertMobile` stub.
+- Reuse `MainNetworkSelector` in RuntimePlan — do not reimplement pin/createdAt sort.

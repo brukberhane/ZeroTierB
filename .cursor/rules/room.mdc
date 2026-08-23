@@ -15,11 +15,13 @@ Does **not** cover: Compose list UI.
 
 ## Invariants
 
-1. Never bump `version` without a `Migration`. No silent `fallbackToDestructiveMigration` for shipped users (current code has fallback — dual-mode tasks should add real 2→3).
-2. `link_profiles` is physical links, not ZT nets.
-3. Pin-main: one row `isPinnedMain=1`. Clear others in the same transaction.
-4. `createdAt=0` sorts after real timestamps, then `networkId`.
-5. `exportSchema` may stay false until a task enables it; do not invent schema JSON.
+1. Never bump `version` without a `Migration`. No `fallbackToDestructiveMigration` for shipped users. Room **v3** ships `MIGRATION_1_2` + `MIGRATION_2_3` (networks pin/createdAt + `link_profiles`).
+2. `link_profiles` is physical links, not ZT nets. Seed `other` / PROXY; unknown Wi‑Fi SSID must **not** auto-insert rows (handled in AUTO/classifier tasks).
+3. Pin-main: one row `isPinnedMain=1`. Clear others in the same transaction (`setPinnedMain`).
+4. Main net among enabled: pin wins; else oldest real `createdAt`; `createdAt=0` sorts last, then `networkId`.
+5. On network insert, set `createdAt` if unset; on upsert keep existing `createdAt` / pin unless `setPinnedMain`.
+6. Mobile link upsert: update metadata (`label`, slot, iccId) but **keep existing `mode`** when the row already exists.
+7. `exportSchema` may stay false until a task enables it; do not invent schema JSON.
 
 ## External docs
 
@@ -33,6 +35,22 @@ Does **not** cover: Compose list UI.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| User networks gone after upgrade | `fallbackToDestructiveMigration()` | Add `MIGRATION_2_3` for new columns/tables |
+| User networks gone after upgrade | `fallbackToDestructiveMigration()` | Real `Migration` for every version bump; register all prior migrations |
+
+<!-- last-verified: 2026-08 -->
+
+### `Pin lost on REPLACE upsert`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Main pin clears after edit/save | `OnConflictStrategy.REPLACE` writes defaults | Merge from existing row: keep `createdAt` / `isPinnedMain` unless caller intentionally changes them |
+
+<!-- last-verified: 2026-08 -->
+
+### `Link mode reset on SIM refresh`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| User set mobile link to VPN; later becomes PROXY | Metadata upsert overwrote `mode` | Merge: new row → PROXY default; existing → keep `mode`, update label/slot/icc only |
 
 <!-- last-verified: 2026-08 -->

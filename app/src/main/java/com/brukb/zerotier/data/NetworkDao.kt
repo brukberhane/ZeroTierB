@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import kotlinx.coroutines.flow.Flow
@@ -30,4 +31,16 @@ interface NetworkDao {
 
     @Query("DELETE FROM networks WHERE networkId = :networkId")
     suspend fun delete(networkId: String)
+
+    @Query("UPDATE networks SET isPinnedMain = 0")
+    suspend fun clearPinnedMain()
+
+    @Query("UPDATE networks SET isPinnedMain = 1 WHERE networkId = :networkId")
+    suspend fun pinMain(networkId: String)
+
+    @Transaction
+    suspend fun setPinnedMain(networkId: String) {
+        clearPinnedMain()
+        pinMain(networkId)
+    }
 }

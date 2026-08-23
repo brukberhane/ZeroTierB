@@ -12,11 +12,26 @@ class NetworkRepository(
 
     suspend fun getById(networkId: String): ZerotierBNetwork? = dao.getById(networkId)
 
-    suspend fun upsert(network: ZerotierBNetwork) = dao.upsert(network)
+    suspend fun upsert(network: ZerotierBNetwork) {
+        val existing = dao.getById(network.networkId)
+        val toSave = when {
+            existing == null && network.createdAt == 0L ->
+                network.copy(createdAt = System.currentTimeMillis())
+            existing != null && network.createdAt == 0L ->
+                network.copy(
+                    createdAt = existing.createdAt,
+                    isPinnedMain = network.isPinnedMain || existing.isPinnedMain,
+                )
+            else -> network
+        }
+        dao.upsert(toSave)
+    }
 
     suspend fun update(network: ZerotierBNetwork) = dao.update(network)
 
     suspend fun delete(networkId: String) = dao.delete(networkId)
+
+    suspend fun setPinnedMain(networkId: String) = dao.setPinnedMain(networkId)
 
     suspend fun migrateStoredNetworkIds() {
         for (network in dao.getAll()) {

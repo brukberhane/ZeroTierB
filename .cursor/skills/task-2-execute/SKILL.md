@@ -49,7 +49,7 @@ the user before heavy work if they are still on a [small] model.
    restore verify tooling — do **not** treat `./gradlew test` alone as
    "lint+test green."  
 6. Never vendor forbidden reference trees.  
-7. Do not commit unless the user explicitly asked (task-3-complete commits + pushes on close-out).  
+7. Do not commit unless the user explicitly asked (task-3-complete commits on close-out; push only with `--push`).  
 8. Only one phase task InProgress unless human approved parallel work.
 
 [large]: https://platform.kimi.ai/docs/guide/kimi-k3-quickstart
@@ -116,7 +116,7 @@ Fill Verification and Files Modified. Leave INDEX as `InProgress` until
 
 Tell the user:
 
-> Run `/task-3-complete TXX` — re-verify → dialectic → INDEX → ✅ → commit → push (default; `--no-push` to skip) → Manual test handoff → next branch.
+> Run `/task-3-complete TXX` — re-verify → dialectic → INDEX → ✅ → commit (default **no push**; add `--push` to push) → Manual test handoff → next branch.
 
 If the user already asked to execute **and** complete in one go, run
 `/task-3-complete` yourself now.

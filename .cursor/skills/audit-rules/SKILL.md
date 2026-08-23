@@ -46,7 +46,7 @@ Extract from every skill: frontmatter, path refs, tool allowances.
 - **Hooks:** lefthook (or documented equivalent) present and wired to lint+test;
   root `Makefile` with `verify`; stack lint config present — flag absence as `BROKEN`
   (execute/complete must hard-abort)  
-- **Complete skill:** `/task-3-complete` documents push-by-default, `--no-push`,
+- **Complete skill:** `/task-3-complete` documents **no-push by default**, opt-in `--push`,
   and mandatory Manual test / Nothing to test handoff; verify **presence** abort  
 - **Execute skill:** `/task-2-execute` documents the same verify presence abort  
 - **Bootstrap skill:** prefers latest stable Go + package baselines; creates

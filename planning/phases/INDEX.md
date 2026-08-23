@@ -9,7 +9,7 @@
 | ID | Title | Status | Depends-on | Next | Layer | Notes |
 | -- | ----- | ------ | ---------- | ---- | ----- | ----- |
 | T01 | [Verify gate + existing VPN baseline](./T01-verify-gate-vpn-baseline.md) | ✅ | — | T02 | L0 | |
-| T02 | [Preferences + Room v3 (modes, pin, links table)](./T02-prefs-room-v3.md) | Pending | T01 | T03 | L1 | |
+| T02 | [Preferences + Room v3 (modes, pin, links table)](./T02-prefs-room-v3.md) | ✅ | T01 | T03 | L1 | |
 | T03 | [RuntimePlan resolver (pure)](./T03-runtime-plan-resolver.md) | Pending | T02 | T04 | L3 | |
 | T04 | [Link classifier + debounce](./T04-link-classifier-debounce.md) | Pending | T03 | T05 | L3 | |
 | T05 | [libzt HTTP proxy on 127.0.0.1](./T05-libzt-http-proxy-loopback.md) | Pending | T04 | T06 | L4 | |
