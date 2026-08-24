@@ -24,6 +24,7 @@ These came from real bugs; preserve the patterns.
 - **`Service.onDestroy` must not launch cleanup on a scope it then cancels.** `scope.launch { cleanup() }; job.cancel()` kills the cleanup before it dispatches → stale system HTTP proxy + zombie libzt node. Use a detached scope for final cleanup.
 - **FGS 5-second rule:** call `startForeground()` synchronously in `onStartCommand`. Any early-return path (superseded start, refusal) that skips it crashes with `ForegroundServiceDidNotStartInTimeException`.
 - **Never parse proxy request headers with `BufferedReader` and then relay the raw socket.** The reader's read-ahead buffer swallows body bytes → every POST/PUT through the proxy is corrupted (form logins 500, clients show the redirect/login page). Parse byte-exact to CRLF-CRLF from a `BufferedInputStream` and relay from the same stream. Tell: plain POST fails but an `Expect: 100-continue` POST works.
+- **Plain-HTTP proxying must rewrite the request line per request, not per connection.** Proxy clients send absolute-form (`GET http://host/path HTTP/1.1`); the origin 404s it. A keep-alive follow-up (e.g. auth retry after a 401) forwarded verbatim is misrouted. Loop per request: byte-exact header parse → rewrite to origin-form → fresh origin connection (`Connection: close`) → pump exact `Content-Length`. Don't force-close the client side instead — pipelined/reused requests race the teardown. And never `shutdownOutput()` the origin right after headers: some servers reset on early FIN.
 
 ## Lessons learned (libzt / lwIP — native)
 

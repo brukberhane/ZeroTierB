@@ -78,6 +78,15 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 <!-- last-verified: 2026-08 -->
 
+### `Keep-alive follow-up misrouted (absolute-form request line)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| First proxied request fine, same-connection follow-up 404s (classic: auth retry after a 401); fresh connections and VPN mode work | Proxy rewrote the absolute-form request line only for the first request; keep-alive follow-ups reached the origin verbatim (`GET http://host/path HTTP/1.1` — unroutable) | Plain-HTTP proxy must rewrite the request line **per request**: loop over requests, byte-exact header parse, fresh origin connection (`Connection: close`) per request, pump exact `Content-Length`. Do not "fix" by force-closing the client connection — clients pipeline/reuse and those bytes race the teardown ("target server failed to respond") |
+| Origin resets before responding (502, empty response) after a GET | `shutdownOutput()` (FIN) sent right after request headers — some servers treat early half-close as client abort | Never FIN the origin socket to signal end-of-request; the request is self-describing (`Connection: close` + `Content-Length`) |
+
+<!-- last-verified: 2026-08 -->
+
 ### `New .cpp silently not linked`
 
 | Symptom | Cause | Fix |
