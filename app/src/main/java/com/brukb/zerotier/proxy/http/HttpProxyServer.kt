@@ -97,16 +97,27 @@ class HttpProxySession(
         // bytes it had read ahead, corrupting every POST/PUT (seen in the
         // wild as Calibre-Web form login failing through the proxy only).
         val input = BufferedInputStream(client.getInputStream(), BUFFERED_STREAM_BYTES)
-        val headerBytes = readHeaderBlock(input) ?: return
-        val headerLines = String(headerBytes, Charsets.ISO_8859_1).split("\r\n")
-        val requestLine = headerLines.firstOrNull()?.takeIf { it.isNotBlank() } ?: return
-        val parts = requestLine.split(' ')
-        if (parts.size < 3) return
-        val method = parts[0]
-        val target = parts[1]
-        when (method.uppercase()) {
-            "CONNECT" -> handleConnect(target, input)
-            else -> handlePlainHttp(method, target, headerLines, input)
+        // Keep-alive loop: every request gets its request line rewritten
+        // (absolute -> origin form) and a fresh origin connection. Relaying
+        // follow-up requests verbatim would send absolute-form lines the
+        // origin cannot route (observed: auth retry -> 404 from Calibre-Web).
+        while (true) {
+            val headerBytes = readHeaderBlock(input) ?: return
+            val headerLines = String(headerBytes, Charsets.ISO_8859_1).split("\r\n")
+            val requestLine = headerLines.firstOrNull()?.takeIf { it.isNotBlank() } ?: return
+            val parts = requestLine.split(' ')
+            if (parts.size < 3) return
+            val method = parts[0]
+            val target = parts[1]
+            val headers = headerLines.subList(1, headerLines.size).takeWhile { it.isNotEmpty() }
+            Log.i(TAG, "request $method $target")
+            if (method.equals("CONNECT", ignoreCase = true)) {
+                handleConnect(target, input)
+                return
+            }
+            if (!handlePlainHttp(method, target, headers, input)) {
+                return
+            }
         }
     }
 
@@ -148,12 +159,17 @@ class HttpProxySession(
         relay(client, input, remote)
     }
 
+    /**
+     * Forward one plain-HTTP request to the origin (fresh connection,
+     * Connection: close) and stream the full response back. Returns true if
+     * the client connection is usable for another request.
+     */
     private fun handlePlainHttp(
         method: String,
         target: String,
-        headerLines: List<String>,
+        headers: List<String>,
         input: InputStream,
-    ) {
+    ): Boolean {
         val url = java.net.URL(if (target.startsWith("http")) target else "http://$target")
         val host = url.host
         val port = if (url.port > 0) url.port else 80
@@ -165,17 +181,78 @@ class HttpProxySession(
         } catch (e: Exception) {
             Log.w(TAG, "connect failed $host:$port", e)
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
-            return
+            return true
         }
+        val contentLength = headers
+            .firstOrNull { it.startsWith("Content-Length:", ignoreCase = true) }
+            ?.substringAfter(':')?.trim()?.toLongOrNull() ?: 0L
+        val expectsContinue = headers.any { it.equals("Expect: 100-continue", ignoreCase = true) }
+        val remoteIn = BufferedInputStream(remote.input, BUFFERED_STREAM_BYTES)
+        val clientOut = client.getOutputStream()
         val output = remote.output
         output.write("$method $path HTTP/1.1\r\n".toByteArray())
-        for (line in headerLines.subList(1, headerLines.size)) {
-            if (line.isEmpty()) break
+        for (line in headers) {
+            if (line.startsWith("Connection:", ignoreCase = true)) continue
+            if (line.startsWith("Proxy-Connection:", ignoreCase = true)) continue
+            if (line.startsWith("Keep-Alive:", ignoreCase = true)) continue
             output.write("$line\r\n".toByteArray())
         }
-        output.write("\r\n".toByteArray())
+        output.write("Connection: close\r\n\r\n".toByteArray())
         output.flush()
-        relay(client, input, remote)
+
+        if (expectsContinue) {
+            // The client holds the body until it sees 100 Continue.
+            val interim = readHeaderBlock(remoteIn) ?: run {
+                writeResponse(clientOut, 502, "Bad Gateway")
+                remote.close()
+                return true
+            }
+            clientOut.write(interim)
+            clientOut.flush()
+            val interimStatus = String(interim, Charsets.ISO_8859_1).split("\r\n").firstOrNull().orEmpty()
+            if (!interimStatus.contains(" 100")) {
+                // Origin answered with a final response (e.g. 417) instead.
+                pump(remoteIn, clientOut)
+                remote.close()
+                return true
+            }
+        }
+
+        if (contentLength > 0 && !pumpBytes(input, output, contentLength)) {
+            Log.w(TAG, "request body truncated ($contentLength bytes expected)")
+            remote.close()
+            return false
+        }
+        // No shutdownOutput here: the request is fully self-describing
+        // (Connection: close + Content-Length), and an early FIN makes some
+        // origins reset before responding.
+
+        val responseHeaders = readHeaderBlock(remoteIn) ?: run {
+            writeResponse(clientOut, 502, "Bad Gateway")
+            remote.close()
+            return true
+        }
+        val statusLine = String(responseHeaders, Charsets.ISO_8859_1).split("\r\n").firstOrNull().orEmpty()
+        Log.i(TAG, "response $statusLine")
+        clientOut.write(responseHeaders)
+        clientOut.flush()
+        pump(remoteIn, clientOut)
+        remote.close()
+        return true
+    }
+
+    /** Pump exactly [bytes] from input to output; false if the stream ends early. */
+    private fun pumpBytes(input: InputStream, output: OutputStream, bytes: Long): Boolean {
+        val buffer = ByteArray(16_384)
+        var remaining = bytes
+        while (remaining > 0) {
+            val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+            if (read <= 0) return false
+            output.write(buffer, 0, read)
+            remaining -= read
+        }
+        output.flush()
+        return true
     }
 
     private fun resolveDecision(host: String): RouteDecision {
