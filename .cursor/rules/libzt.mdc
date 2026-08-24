@@ -70,6 +70,14 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 <!-- last-verified: 2026-08 -->
 
+### `BufferedReader eats the request body (plain-HTTP proxy)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| POST/PUT through the proxy fails (origin 400/500, form login loops or redirects) while GETs, CONNECT, and VPN mode all work | Header parsing with `BufferedReader` then relaying the **raw** socket stream: body bytes read ahead into the reader's 8KB buffer are silently dropped | Parse headers byte-exact from a `BufferedInputStream` up to CRLF-CRLF and relay from the **same** stream object. Differential test: plain POST fails while an `Expect: 100-continue` POST (body sent after headers) works |
+
+<!-- last-verified: 2026-08 -->
+
 ### `New .cpp silently not linked`
 
 | Symptom | Cause | Fix |

@@ -23,6 +23,7 @@ These came from real bugs; preserve the patterns.
 - **Record "applied" only when reality matches.** If `lastApplied = plan` is set when intents are fired (not when the stack is confirmed up), identical later plans no-op and failures become sticky (mode toggles "do nothing"). Skip apply only when `plan == lastApplied` **and** live stack state matches; on failure leave `lastApplied` stale so the next refresh retries (self-healing).
 - **`Service.onDestroy` must not launch cleanup on a scope it then cancels.** `scope.launch { cleanup() }; job.cancel()` kills the cleanup before it dispatches → stale system HTTP proxy + zombie libzt node. Use a detached scope for final cleanup.
 - **FGS 5-second rule:** call `startForeground()` synchronously in `onStartCommand`. Any early-return path (superseded start, refusal) that skips it crashes with `ForegroundServiceDidNotStartInTimeException`.
+- **Never parse proxy request headers with `BufferedReader` and then relay the raw socket.** The reader's read-ahead buffer swallows body bytes → every POST/PUT through the proxy is corrupted (form logins 500, clients show the redirect/login page). Parse byte-exact to CRLF-CRLF from a `BufferedInputStream` and relay from the same stream. Tell: plain POST fails but an `Expect: 100-continue` POST works.
 
 ## Lessons learned (libzt / lwIP — native)
 
