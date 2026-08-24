@@ -51,6 +51,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 class ZerotierBVpnService :
     VpnService(),
@@ -113,6 +114,13 @@ class ZerotierBVpnService :
                 refreshJoinedNetworks()
                 return START_STICKY
             }
+            val startToken = intent?.getLongExtra(EXTRA_START_TOKEN, 0L) ?: 0L
+            if (isStartSuperseded(startToken)) {
+                Log.i(TAG, "Start superseded by stop — not starting node")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
             try {
                 val socket = DatagramSocket(null).apply {
                     reuseAddress = true
@@ -120,6 +128,7 @@ class ZerotierBVpnService :
                     bind(InetSocketAddress(9994))
                 }
                 if (!protect(socket)) {
+                    markStopped()
                     updateState { copy(statusMessage = "Failed to protect UDP socket") }
                     stopSelf(startId)
                     return START_NOT_STICKY
@@ -355,6 +364,7 @@ class ZerotierBVpnService :
 
     fun shutdown() {
         synchronized(this) {
+            markStopped()
             udpThread?.interrupt()
             try {
                 udpThread?.join(1000)
@@ -773,6 +783,7 @@ class ZerotierBVpnService :
         const val ACTION_LEAVE = "com.brukb.zerotier.vpn.LEAVE"
         const val EXTRA_NETWORK_ID = "network_id"
         const val EXTRA_SINGLE_NETWORK_ID = "single_network_id"
+        const val EXTRA_START_TOKEN = "start_token"
 
         private val _state = MutableStateFlow(VpnServiceState())
         val state: StateFlow<VpnServiceState> = _state.asStateFlow()
@@ -781,29 +792,49 @@ class ZerotierBVpnService :
         var lastUnderlyingNetworkHandle: Long? = null
             private set
 
+        private val startCounter = AtomicLong()
+
+        @Volatile
+        private var stoppedToken = 0L
+
+        /** True when a start was requested and no stop has superseded it yet. */
+        val startRequested: Boolean
+            get() = startCounter.get() > stoppedToken
+
+        private fun isStartSuperseded(token: Long): Boolean =
+            token != 0L && token <= stoppedToken
+
+        private fun markStopped() {
+            stoppedToken = startCounter.get()
+        }
+
         fun start(context: Context, singleNetworkId: String? = null) {
+            val token = startCounter.incrementAndGet()
             val intent = Intent(context, ZerotierBVpnService::class.java).apply {
+                putExtra(EXTRA_START_TOKEN, token)
                 singleNetworkId?.let { putExtra(EXTRA_SINGLE_NETWORK_ID, it) }
             }
             context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {
+            markStopped()
             val intent = Intent(context, ZerotierBVpnService::class.java).apply {
                 action = ACTION_STOP
             }
             context.startService(intent)
         }
 
-        suspend fun stopAndAwait(context: Context, timeoutMs: Long = 10_000) {
-            if (!state.value.isRunning) return
+        suspend fun stopAndAwait(context: Context, timeoutMs: Long = 15_000): Boolean {
+            if (!state.value.isRunning && !startRequested) return true
             stop(context)
             val stopped = withTimeoutOrNull(timeoutMs) {
-                state.first { !it.isRunning }
+                state.first { !it.isRunning && !startRequested }
             }
             if (stopped == null) {
                 Log.w(TAG, "VPN stop timed out after ${timeoutMs}ms")
             }
+            return stopped != null
         }
 
         fun joinNetwork(context: Context, networkId: String) {

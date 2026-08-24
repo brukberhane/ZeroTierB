@@ -114,15 +114,26 @@ class ZeroTierNodeManager(
         }
     }
 
-    suspend fun waitForNetworkReady(networkId: Long, timeoutMs: Long = 120_000): Result<ZtNetworkStatus> = withNode {
+    suspend fun waitForNetworkReady(
+        networkId: Long,
+        timeoutMs: Long = 120_000,
+        shouldAbort: () -> Boolean = { false },
+    ): Result<ZtNetworkStatus> = withNode {
         runCatching {
             val ready = withTimeoutOrNull(timeoutMs) {
                 while (!node.isNetworkTransportReady(networkId)) {
+                    if (shouldAbort()) return@withTimeoutOrNull false
                     ZeroTierNative.zts_util_delay(100)
                 }
                 true
             } ?: false
-            check(ready) { "Network $networkId not ready within ${timeoutMs}ms" }
+            check(ready) {
+                if (shouldAbort()) {
+                    "Network $networkId join aborted"
+                } else {
+                    "Network $networkId not ready within ${timeoutMs}ms"
+                }
+            }
             refreshNetworkInfo(networkId)
             networkStatuses[networkId] ?: error("Network info missing after ready")
         }

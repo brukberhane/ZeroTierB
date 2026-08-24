@@ -14,12 +14,16 @@ import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
 
 data class OrchestratorState(
     val plan: RuntimePlan? = null,
@@ -87,7 +91,7 @@ class ConnectionOrchestrator(
     private fun activeDataSubscriptionId(): Int? = DataSubscriptionIds.activeOrNull()
 
     private suspend fun applyLocked(plan: RuntimePlan) {
-        if (plan == lastApplied) {
+        if (plan == lastApplied && runtimeMatches(plan)) {
             Log.i(TAG, "plan unchanged: ${plan.reason}")
             return
         }
@@ -102,6 +106,8 @@ class ConnectionOrchestrator(
             lastApplied = plan
             _state.value = _state.value.copy(isApplying = false, lastError = null)
         } catch (e: Exception) {
+            // lastApplied intentionally left stale: the next refresh retries
+            // instead of no-oping on a plan that never became reality.
             Log.e(TAG, "apply failed: ${plan.reason}", e)
             _state.value = _state.value.copy(
                 isApplying = false,
@@ -110,46 +116,110 @@ class ConnectionOrchestrator(
         }
     }
 
-    private suspend fun applyOff() {
-        if (ZerotierBVpnService.state.value.isRunning) {
-            stopVpnLocked()
-        }
-        if (ProxyModeService.state.value.isRunning) {
-            stopProxyLocked()
+    /**
+     * True when the live stack state (including in-flight starts) already
+     * matches what the plan wants. Guards the [lastApplied] short-circuit so
+     * a crashed or refused service does not make a plan sticky.
+     */
+    private fun runtimeMatches(plan: RuntimePlan): Boolean {
+        val vpnActive = ZerotierBVpnService.state.value.isRunning || ZerotierBVpnService.startRequested
+        val proxyActive = ProxyModeService.state.value.isRunning || ProxyModeService.startRequested
+        return when (plan.runtime) {
+            Runtime.OFF -> !vpnActive && !proxyActive
+            Runtime.PROXY -> proxyActive && !vpnActive
+            Runtime.VPN -> vpnActive && !proxyActive
         }
     }
 
+    private suspend fun applyOff() {
+        stopProxyStack()
+        stopVpnStack()
+    }
+
     private suspend fun applyProxy(plan: RuntimePlan) {
-        if (ZerotierBVpnService.state.value.isRunning) {
-            stopVpnLocked()
-        }
+        stopVpnStack()
+        awaitUdpPortReleased(VPN_UDP_PORT)
         if (!ProxyModeService.state.value.isRunning) {
             ProxyModeService.start(context, joinNetworkIds = plan.joinNetworkIds)
+            if (!awaitProxyStarted()) {
+                throw IllegalStateException(
+                    ProxyModeService.state.value.lastError ?: "Proxy service did not start",
+                )
+            }
         }
     }
 
     private suspend fun applyVpn(plan: RuntimePlan) {
         SystemProxyManager(context, preferences).disable()
-        if (ProxyModeService.state.value.isRunning) {
-            stopProxyLocked()
-        }
+        stopProxyStack()
+        awaitUdpPortReleased(LIBZT_UDP_PORT)
         val vpnId = plan.vpnNetworkId ?: return
-        val vpnRunning = ZerotierBVpnService.state.value.isRunning
-        val appliedId = lastApplied?.vpnNetworkId
-        if (vpnRunning && appliedId != vpnId) {
-            stopVpnLocked()
+        if (ZerotierBVpnService.state.value.isRunning && lastApplied?.vpnNetworkId != vpnId) {
+            stopVpnStack()
         }
         if (!ZerotierBVpnService.state.value.isRunning) {
             ZerotierBVpnService.start(context, singleNetworkId = vpnId)
+            if (!awaitVpnStarted()) {
+                throw IllegalStateException(
+                    ZerotierBVpnService.state.value.statusMessage
+                        .ifBlank { "VPN service did not start" },
+                )
+            }
         }
     }
 
-    private suspend fun stopProxyLocked() {
-        ProxyModeService.stopAndAwait(context)
+    private suspend fun stopProxyStack() {
+        if (!ProxyModeService.stopAndAwait(context)) {
+            throw IllegalStateException("Proxy did not stop in time — aborting swap")
+        }
     }
 
-    private suspend fun stopVpnLocked() {
-        ZerotierBVpnService.stopAndAwait(context)
+    private suspend fun stopVpnStack() {
+        if (!ZerotierBVpnService.stopAndAwait(context)) {
+            throw IllegalStateException("VPN did not stop in time — aborting swap")
+        }
+    }
+
+    private suspend fun awaitProxyStarted(timeoutMs: Long = 15_000): Boolean {
+        val outcome = withTimeoutOrNull(timeoutMs) {
+            ProxyModeService.state.first { it.isRunning || !ProxyModeService.startRequested }
+        } ?: return false
+        return outcome.isRunning
+    }
+
+    private suspend fun awaitVpnStarted(timeoutMs: Long = 15_000): Boolean {
+        val outcome = withTimeoutOrNull(timeoutMs) {
+            ZerotierBVpnService.state.first { it.isRunning || !ZerotierBVpnService.startRequested }
+        } ?: return false
+        return outcome.isRunning
+    }
+
+    /**
+     * Spec §7.2: never start the other stack while the previous one may still
+     * hold its UDP port (libzt: 9993, JNI VPN: 9994). Two live sockets with
+     * the same identity split the node's paths and the VPN join never leaves
+     * REQUESTING_CONFIGURATION.
+     */
+    private suspend fun awaitUdpPortReleased(port: Int, timeoutMs: Long = 5_000) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isUdpPortFree(port)) return
+            delay(200)
+        }
+        throw IllegalStateException("UDP port $port still busy — previous stack not fully stopped")
+    }
+
+    private fun isUdpPortFree(port: Int): Boolean {
+        val socket = DatagramSocket(null)
+        return try {
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress(port))
+            true
+        } catch (e: Exception) {
+            false
+        } finally {
+            runCatching { socket.close() }
+        }
     }
 
     private fun manualOffPlan(): RuntimePlan =
@@ -163,5 +233,7 @@ class ConnectionOrchestrator(
 
     companion object {
         private const val TAG = "ConnectionOrchestrator"
+        private const val LIBZT_UDP_PORT = 9993
+        private const val VPN_UDP_PORT = 9994
     }
 }
