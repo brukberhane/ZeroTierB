@@ -17,7 +17,7 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 ## Invariants
 
-1. At most one ZeroTier node is live. Swap = stop A, wait dead, start B.
+1. At most one ZeroTier node is live. Swap = stop A (**including in-flight starts**), wait dead + its UDP port bindable (spec §7.2), start B. Stop timeout → **abort the swap**, never proceed anyway.
 2. PROXY joins every `isEnabled` ZT network. VPN joins **only** main; `leave()` all others.
 3. AUTO with no uplink → runtime OFF. Global PROXY/VPN ignore link and stay requested.
 4. Missing VPN consent: do not background-prompt. Wanted VPN + consent false → PROXY if enabled nets nonempty else OFF; set `vpnConsentMissing = true`.
@@ -45,7 +45,31 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Same node ID, two paths, peers confused | libzt and JNI both opened `identity.secret` | Mutex; `stopAndAwait()` until peer service `isRunning` false; never two live nodes |
+| Same node ID, two paths; VPN stuck `REQUESTING_CONFIGURATION` while PROXY "works" | libzt and JNI both opened `identity.secret` — usually an **in-flight start** the stop check missed (`isRunning` flips after `start()` returns) | Synchronous start tokens (`startCounter`/`stoppedToken`); treat `isRunning \|\| startRequested` as active so STOP is always sent; superseded starts self-abort; never two live nodes |
+
+<!-- last-verified: 2026-08 -->
+
+### `Slow stop breaks the swap`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Swap only fails while networks are still joining; STOP takes minutes | Start coroutine holds the service mutex through long joins (120s `waitForNetworkReady` each); STOP queues behind it, `stopAndAwait` times out, apply proceeds → split-brain | Abort predicate in every wait loop (checked ~100ms); bounded per-item timeouts; readiness also arrives via the event listener, so short waits lose nothing |
+
+<!-- last-verified: 2026-08 -->
+
+### `onDestroy cancels its own cleanup`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Stale system HTTP_PROXY / zombie libzt node after service death | `onDestroy` launched cleanup on `scope` then immediately `serviceJob.cancel()` — coroutine cancelled before dispatch | Final cleanup on a detached scope (`CoroutineScope(SupervisorJob() + Dispatchers.IO)`), then cancel the service job |
+
+<!-- last-verified: 2026-08 -->
+
+### `FGS 5s rule on early returns`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `ForegroundServiceDidNotStartInTimeException` when a start is refused or superseded | `startForegroundService()` was answered with `startForeground()` only inside a coroutine that early-returned | Call `startForeground()` synchronously in `onStartCommand` before any async branch; early-exit paths `stopForeground(REMOVE)` + `stopSelf()` |
 
 <!-- last-verified: 2026-08 -->
 
@@ -61,7 +85,7 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Orchestrator starts JNI while libzt still up | Service `shutdown()` has no completion callback | Companion `stopAndAwait()` polls `StateFlow.isRunning` (10s timeout) |
+| Orchestrator starts JNI while libzt still up | Service `shutdown()` has no completion callback; a stop timeout was logged and apply proceeded anyway | Companion `stopAndAwait()` returns Boolean (15s); on timeout **abort the swap** (throw, leave `lastApplied` stale); wait until the vacated UDP port (9993/9994) is bindable before starting the other stack |
 
 <!-- last-verified: 2026-08 -->
 
@@ -69,7 +93,7 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| AUTO WiFi A PROXY → WiFi B PROXY triggers stack churn | Re-applied identical `RuntimePlan` | `if (plan == lastApplied) return` before stop/start |
+| AUTO WiFi A PROXY → WiFi B PROXY triggers stack churn | Re-applied identical `RuntimePlan` | Skip only when `plan == lastApplied` **and** live stack state matches (`runtimeMatches`) — a crashed/refused service must re-apply on the next refresh (self-healing), not no-op |
 
 <!-- last-verified: 2026-08 -->
 

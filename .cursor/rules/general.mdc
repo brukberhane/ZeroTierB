@@ -117,7 +117,7 @@ ZerotierBNetwork: enabled + pin-main + createdAt + routePriority — no PROXY/VP
 **Spec of record for dual-mode:** [`docs/PROXY-VPN-PLAN.md`](../../docs/PROXY-VPN-PLAN.md).
 **Delivery sequence:** [`planning/phases/INDEX.md`](../../planning/phases/INDEX.md).
 
-Today the tree is VPN-only (JNI). Dual-mode lands through INDEX tasks. Do not run libzt `Node` and JNI `Node` at the same time. Share `filesDir` identity. HTTP proxy binds **127.0.0.1 only**.
+Both runtimes are implemented: PROXY (libzt) and VPN (JNI). Never run libzt `Node` and JNI `Node` at the same time. Share `filesDir` identity. HTTP proxy binds **127.0.0.1 only**.
 
 ### Inspiration sources
 

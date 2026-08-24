@@ -62,6 +62,30 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 <!-- last-verified: 2026-08 -->
 
+### `Managed-route destination unreachable (502 after full timeout)`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Proxy 502s off-subnet ZT prefixes (e.g. LAN behind a gateway node) after a ~10s hang; same target works in VPN mode; `zts_connect` returns `-1` only after the full timeout | ZeroTierOne applies managed routes at OS level only — libzt's lwIP has no route (`ERR_RTE`), and `zts_connect` retries fresh connects for the whole timeout, hiding the instant failure | `LWIP_HOOK_IP4_ROUTE`/`IP6_ROUTE` (netif by longest prefix) + `LWIP_HOOK_ETHARP_GET_GW`/`ND6_GET_GW` (off-link dest → resolve the route's `via` on the overlay; via-less → dest itself) in `libzt/src/Routing.cpp`, fed by `NodeService::rebuildRouteCache()`; policy = `OneService::checkIfManagedIsAllowed` (port verbatim, keep in sync); rebuild AAR. Recognition: a **full-timeout `zts_connect` hang == no route/stack problem**, not a slow peer |
+
+<!-- last-verified: 2026-08 -->
+
+### `New .cpp silently not linked`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Undefined-symbol link errors after adding a libzt source file, though the symbols exist | CMake `file(GLOB …)` is evaluated at configure time; the cached build never re-globs | Wipe `libzt/pkg/android/app/.cxx` (and `libzt/cache/android-*`) when adding/removing sources, then rebuild |
+
+<!-- last-verified: 2026-08 -->
+
+### `Formatter pollutes upstream-bound diff`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Diff full of reflows in code you never touched | The libzt fork is **not** format-clean; whole-file clang-format rewrites pre-existing code | `clang-format-11 --lines=start:end` restricted to your ranges (venv: `pip install clang-format==11.0.1`); hand-restore any adjacent reflowed lines; keep upstream-bound diffs 100% intentional |
+
+<!-- last-verified: 2026-08 -->
+
 ### `Proxy start while VPN up`
 
 | Symptom | Cause | Fix |
@@ -82,7 +106,7 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| `libzt/src` edit has no effect on device; `libzt.so` BuildId unchanged | App links **prebuilt AAR** `libzt/dist/android-any-android-release/libzt-release.aar`; `make verify` does not rebuild it | `cd libzt/pkg/android && ./gradlew :app:assembleRelease`, then `cp app/build/outputs/aar/libzt-release.aar ../../dist/android-any-android-release/`, then reinstall |
+| `libzt/src` edit has no effect on device; `libzt.so` BuildId unchanged | App links **prebuilt AAR** `libzt/dist/android-any-android-release/libzt-release.aar` (gitignored local artifact); `make verify` does not rebuild it | `cd libzt && ANDROID_HOME=$ANDROID_HOME ./build.sh android-aar release` (builds + copies AAR into `dist/`), then reinstall. Manual fallback: `cd libzt/pkg/android && ./gradlew :app:assembleRelease` + `cp` |
 
 <!-- last-verified: 2026-08 -->
 

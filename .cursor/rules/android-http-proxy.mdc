@@ -64,3 +64,11 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 | `hasPermission()` true but `enable()` throws `SecurityException` | `Settings.Global.getString` does not throw without grant; archive try/catch on read always passed | `hasPermission`: no-op `putString(HTTP_PROXY, current)` round-trip; catch `SecurityException` |
 
 <!-- last-verified: 2026-08 -->
+
+### `Stale adb-forwarded port`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `curl: (52) Empty reply from server` in ~2ms through `adb forward` | Proxy rebound a new ephemeral port on restart; adbd accepts the forward then fails to connect, which reads as an instant empty reply | Re-read `adb shell settings get global http_proxy` and re-forward the current port. Boundary: a **10s hang → 502** is ZT-side (see libzt rules), not staleness |
+
+<!-- last-verified: 2026-08 -->
