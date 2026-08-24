@@ -13,9 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
+import java.io.BufferedInputStream
 import java.io.IOException
-import java.io.InputStreamReader
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -92,19 +92,48 @@ class HttpProxySession(
 ) {
     fun handle() {
         client.soTimeout = 60_000
-        val reader = BufferedReader(InputStreamReader(client.getInputStream()))
-        val requestLine = reader.readLine() ?: return
+        // Parse headers from a buffered byte stream and relay from the SAME
+        // stream: a BufferedReader here would silently swallow request-body
+        // bytes it had read ahead, corrupting every POST/PUT (seen in the
+        // wild as Calibre-Web form login failing through the proxy only).
+        val input = BufferedInputStream(client.getInputStream(), BUFFERED_STREAM_BYTES)
+        val headerBytes = readHeaderBlock(input) ?: return
+        val headerLines = String(headerBytes, Charsets.ISO_8859_1).split("\r\n")
+        val requestLine = headerLines.firstOrNull()?.takeIf { it.isNotBlank() } ?: return
         val parts = requestLine.split(' ')
         if (parts.size < 3) return
         val method = parts[0]
         val target = parts[1]
         when (method.uppercase()) {
-            "CONNECT" -> handleConnect(target)
-            else -> handlePlainHttp(method, target, reader)
+            "CONNECT" -> handleConnect(target, input)
+            else -> handlePlainHttp(method, target, headerLines, input)
         }
     }
 
-    private fun handleConnect(target: String) {
+    /**
+     * Read exactly up to and including the CRLF-CRLF header terminator —
+     * never one byte beyond it, so the request body stays intact in [input].
+     */
+    private fun readHeaderBlock(input: InputStream): ByteArray? {
+        val out = java.io.ByteArrayOutputStream(1024)
+        var state = 0
+        while (true) {
+            val b = input.read()
+            if (b == -1) return null
+            out.write(b)
+            state = when (state) {
+                0 -> if (b == '\r'.code) 1 else 0
+                1 -> if (b == '\n'.code) 2 else if (b == '\r'.code) 1 else 0
+                2 -> if (b == '\r'.code) 3 else 0
+                3 -> if (b == '\n'.code) 4 else if (b == '\r'.code) 1 else 0
+                else -> 0
+            }
+            if (state == 4) return out.toByteArray()
+            if (out.size() >= MAX_HEADER_BYTES) return null
+        }
+    }
+
+    private fun handleConnect(target: String, input: InputStream) {
         val (host, port) = parseHostPort(target, 443)
         val decision = resolveDecision(host)
         logRoute(host, port, decision)
@@ -116,10 +145,15 @@ class HttpProxySession(
             return
         }
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
-        relay(client, remote)
+        relay(client, input, remote)
     }
 
-    private fun handlePlainHttp(method: String, target: String, reader: BufferedReader) {
+    private fun handlePlainHttp(
+        method: String,
+        target: String,
+        headerLines: List<String>,
+        input: InputStream,
+    ) {
         val url = java.net.URL(if (target.startsWith("http")) target else "http://$target")
         val host = url.host
         val port = if (url.port > 0) url.port else 80
@@ -135,14 +169,13 @@ class HttpProxySession(
         }
         val output = remote.output
         output.write("$method $path HTTP/1.1\r\n".toByteArray())
-        var line: String?
-        while (reader.readLine().also { line = it } != null) {
-            if (line.isNullOrEmpty()) break
+        for (line in headerLines.subList(1, headerLines.size)) {
+            if (line.isEmpty()) break
             output.write("$line\r\n".toByteArray())
         }
         output.write("\r\n".toByteArray())
         output.flush()
-        relay(client, remote)
+        relay(client, input, remote)
     }
 
     private fun resolveDecision(host: String): RouteDecision {
@@ -193,11 +226,11 @@ class HttpProxySession(
         }?.hostAddress
     }
 
-    private fun relay(client: Socket, remote: ProxyConnection) {
+    private fun relay(client: Socket, clientInput: InputStream, remote: ProxyConnection) {
         // Half-close only during relay: closing the ZT socket while the sibling
         // pump is blocked in zts_bsd_read aborts the process (destroyed mutex).
         val t1 = Thread {
-            runCatching { pump(client.getInputStream(), remote.output) }
+            runCatching { pump(clientInput, remote.output) }
             remote.shutdownOutput()
         }
         val t2 = Thread {
@@ -268,5 +301,7 @@ class HttpProxySession(
     companion object {
         private const val TAG = "HttpProxySession"
         private const val ZT_CONNECT_TIMEOUT_MS = 10_000
+        private const val MAX_HEADER_BYTES = 16 * 1024
+        private const val BUFFERED_STREAM_BYTES = 16 * 1024
     }
 }
