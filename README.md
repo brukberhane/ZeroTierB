@@ -4,7 +4,7 @@ Android app that runs a ZeroTier node via libzt and exposes network access throu
 
 ## libzt patches (submodule)
 
-This project patches `twisteroidambassador/libzt` to expose:
+This project patches `brukberhane/libzt` to expose:
 
 - Managed routes via `zts_core_query_route_cidr`
 - Assigned addresses via `zts_core_query_addr_cidr`
