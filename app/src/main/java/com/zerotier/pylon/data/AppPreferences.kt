@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pylon_prefs")
 
@@ -34,9 +36,28 @@ class AppPreferences(private val context: Context) {
         it[KEY_PROXY_ENABLED] ?: true
     }
 
+    val serviceWanted: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_SERVICE_WANTED] ?: false
+    }
+
+    val privilegedWatchdogEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_WATCHDOG_ENABLED] ?: false
+    }
+
+    val pauseNodeInDoze: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_PAUSE_NODE_IN_DOZE] ?: false
+    }
+
     val savedHttpProxy: Flow<String?> = context.dataStore.data.map {
         it[KEY_SAVED_HTTP_PROXY]
     }
+
+    fun httpProxyPortBlocking(): Int = runBlocking { httpProxyPort.first() }
+    fun serviceWantedBlocking(): Boolean = runBlocking { serviceWanted.first() }
+    fun startOnBootBlocking(): Boolean = runBlocking { startOnBoot.first() }
+    fun privilegedWatchdogEnabledBlocking(): Boolean = runBlocking { privilegedWatchdogEnabled.first() }
+    fun pauseNodeInDozeBlocking(): Boolean = runBlocking { pauseNodeInDoze.first() }
+    fun savedHttpProxyBlocking(): String? = runBlocking { savedHttpProxy.first() }
 
     suspend fun setHttpProxyPort(port: Int) {
         context.dataStore.edit { it[KEY_HTTP_PORT] = port }
@@ -58,6 +79,18 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_PROXY_ENABLED] = enabled }
     }
 
+    suspend fun setServiceWanted(wanted: Boolean) {
+        context.dataStore.edit { it[KEY_SERVICE_WANTED] = wanted }
+    }
+
+    suspend fun setPrivilegedWatchdogEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_WATCHDOG_ENABLED] = enabled }
+    }
+
+    suspend fun setPauseNodeInDoze(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_PAUSE_NODE_IN_DOZE] = enabled }
+    }
+
     suspend fun saveHttpProxy(value: String?) {
         context.dataStore.edit {
             if (value == null) {
@@ -77,6 +110,9 @@ class AppPreferences(private val context: Context) {
         private val KEY_SOCKS5_ENABLED = booleanPreferencesKey("socks5_enabled")
         private val KEY_START_ON_BOOT = booleanPreferencesKey("start_on_boot")
         private val KEY_PROXY_ENABLED = booleanPreferencesKey("proxy_enabled")
+        private val KEY_SERVICE_WANTED = booleanPreferencesKey("service_wanted")
+        private val KEY_WATCHDOG_ENABLED = booleanPreferencesKey("privileged_watchdog")
+        private val KEY_PAUSE_NODE_IN_DOZE = booleanPreferencesKey("pause_node_in_doze")
         private val KEY_SAVED_HTTP_PROXY = stringPreferencesKey("saved_http_proxy")
     }
 }

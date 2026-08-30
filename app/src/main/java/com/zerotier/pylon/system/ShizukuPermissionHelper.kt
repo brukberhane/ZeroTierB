@@ -3,11 +3,19 @@ package com.zerotier.pylon.system
 import android.content.Context
 import android.util.Log
 import rikka.shizuku.Shizuku
+import java.io.File
 
 object ShizukuPermissionHelper {
     private const val TAG = "ShizukuPermission"
 
     fun isAvailable(): Boolean = Shizuku.pingBinder()
+
+    fun suAvailable(): Boolean {
+        val paths = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su")
+        return paths.any { File(it).canExecute() }
+    }
+
+    fun canRunPrivileged(): Boolean = isAvailable() || suAvailable()
 
     fun grantWriteSecureSettings(context: Context): Result<Unit> = runCatching {
         check(isAvailable()) { "Shizuku not running" }
@@ -20,7 +28,15 @@ object ShizukuPermissionHelper {
         Log.i(TAG, "WRITE_SECURE_SETTINGS granted via Shizuku")
     }
 
-    private fun invokeShizukuProcess(cmd: Array<String>): Process {
+    fun startPrivilegedShell(script: String): Process {
+        if (isAvailable()) {
+            return invokeShizukuProcess(arrayOf("sh", "-c", script))
+        }
+        check(suAvailable()) { "Shizuku not running and su not found" }
+        return Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+    }
+
+    fun invokeShizukuProcess(cmd: Array<String>): Process {
         val method = Shizuku::class.java.getDeclaredMethod(
             "newProcess",
             Array<String>::class.java,

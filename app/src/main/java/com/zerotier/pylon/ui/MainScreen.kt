@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,8 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zerotier.pylon.data.model.PylonNetwork
 import com.zerotier.pylon.service.NetworkRuntimeStatus
@@ -49,6 +54,18 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val showAdd by viewModel.showAddNetwork.collectAsState()
     val selected by viewModel.selectedNetwork.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var ignoringBattery by remember { mutableStateOf(viewModel.isIgnoringBatteryOptimizations()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                ignoringBattery = viewModel.isIgnoringBatteryOptimizations()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     ZeroTierPylonTheme {
         Scaffold(
@@ -76,7 +93,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     proxyEnabled = uiState.serviceState.proxyEnabled,
                     onProxyToggle = viewModel::toggleProxy,
                     nodeId = uiState.serviceState.nodeId,
-                    status = viewModel.statusLabel(uiState.serviceState),
+                    status = viewModel.statusLabel(uiState.serviceState, uiState.serviceWanted),
                     httpPort = uiState.serviceState.httpProxyPort,
                     systemProxyActive = uiState.serviceState.systemProxyActive,
                     socks5Enabled = uiState.serviceState.socks5Enabled,
@@ -127,6 +144,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             onHttpPort = viewModel::setHttpPort,
             onSocks5Port = viewModel::setSocks5Port,
             onStartOnBoot = viewModel::setStartOnBoot,
+            ignoringBattery = ignoringBattery,
+            onRequestBatteryExemption = { viewModel.requestBatteryExemption(context) },
+            onOpenBatterySettings = { viewModel.openBatterySettings(context) },
+            onWatchdogEnabled = viewModel::setWatchdogEnabled,
+            onPauseNodeInDoze = viewModel::setPauseNodeInDoze,
         )
     }
 }

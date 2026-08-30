@@ -6,9 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.lifecycle.LifecycleService
 import com.zerotier.pylon.PylonApplication
 import com.zerotier.pylon.R
@@ -20,18 +23,25 @@ import com.zerotier.pylon.proxy.SystemProxyManager
 import com.zerotier.pylon.proxy.dns.DnsResolver
 import com.zerotier.pylon.proxy.http.HttpProxyServer
 import com.zerotier.pylon.proxy.socks5.Socks5ProxyServer
+import com.zerotier.pylon.system.IdleGate
+import com.zerotier.pylon.system.ProxyWatchdog
 import com.zerotier.pylon.ui.MainActivity
 import com.zerotier.pylon.zt.ZeroTierNodeManager
 import com.zerotier.pylon.zt.ZtNetworkStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 
 class PylonService : LifecycleService() {
     private val serviceJob = SupervisorJob()
@@ -43,11 +53,16 @@ class PylonService : LifecycleService() {
     private lateinit var rulesEngine: ProxyRulesEngine
     private lateinit var systemProxyManager: SystemProxyManager
     private lateinit var preferences: AppPreferences
+    private lateinit var idleGate: IdleGate
 
     private var httpProxy: HttpProxyServer? = null
     private var socks5Proxy: Socks5ProxyServer? = null
     private val networkConfigs = mutableMapOf<Long, PylonNetwork>()
     private var nodeStarted = false
+    private var healthJob: Job? = null
+    private val recovering = AtomicBoolean(false)
+    private var nodePausedForDoze = false
+    private val pausedNetworks = mutableListOf<PylonNetwork>()
 
     override fun onCreate() {
         super.onCreate()
@@ -58,6 +73,14 @@ class PylonService : LifecycleService() {
         dnsResolver = DnsResolver()
         rulesEngine = ProxyRulesEngine()
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
+        idleGate = IdleGate(this) { allow, deviceIdle ->
+            if (allow) {
+                scope.launch { onBecameInteractive() }
+            } else {
+                onBecameIdle(deviceIdle)
+            }
+        }
+        idleGate.register()
         createNotificationChannel()
         scope.launch {
             val proxyEnabled = preferences.proxyEnabled.first()
@@ -81,9 +104,21 @@ class PylonService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        promoteForeground(proxyDown = false)
         when (intent?.action) {
-            ACTION_START -> scope.launch { startPylon() }
-            ACTION_STOP -> scope.launch { stopPylon() }
+            ACTION_STOP -> {
+                scope.launch {
+                    preferences.setServiceWanted(false)
+                    stopPylon()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_START -> {
+                scope.launch {
+                    preferences.setServiceWanted(true)
+                    startPylon()
+                }
+            }
             ACTION_JOIN_NETWORK -> {
                 val networkId = intent.getStringExtra(EXTRA_NETWORK_ID) ?: return START_STICKY
                 scope.launch { joinNetworkRuntime(networkId) }
@@ -96,20 +131,63 @@ class PylonService : LifecycleService() {
                 val enabled = intent.getBooleanExtra(EXTRA_PROXY_ENABLED, true)
                 scope.launch { setProxyEnabled(enabled) }
             }
+            else -> {
+                scope.launch {
+                    if (preferences.serviceWanted.first()) startPylon()
+                }
+            }
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent): IBinder? = null
 
+    @Deprecated("Deprecated in Java")
+    override fun onTimeout(startId: Int) {
+        failClosedAndStop("foreground service timeout")
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        failClosedAndStop("foreground service timeout")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (httpProxy?.isListening != true) {
+            systemProxyManager.disableBlocking()
+        }
+    }
+
     override fun onDestroy() {
-        scope.launch { stopPylon() }
+        idleGate.unregister()
+        stopHealthLoop()
+        ProxyWatchdog.stop(this)
+        systemProxyManager.disableBlocking()
+        httpProxy?.stop()
+        httpProxy = null
+        socks5Proxy?.stop()
+        socks5Proxy = null
         serviceJob.cancel()
         super.onDestroy()
     }
 
+    private fun promoteForeground(proxyDown: Boolean) {
+        val port = _state.value.httpProxyPort ?: AppPreferences.DEFAULT_HTTP_PORT
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildNotification(port, proxyDown),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        )
+    }
+
     private suspend fun startPylon() {
-        if (_state.value.isRunning) return
+        if (_state.value.isRunning) {
+            if (idleGate.allowPeriodicWork) {
+                startHealthLoop()
+                startWatchdogIfEnabled()
+            }
+            return
+        }
         updateState {
             copy(
                 isRunning = true,
@@ -117,7 +195,7 @@ class PylonService : LifecycleService() {
                 statusMessage = "Starting ZeroTier node...",
             )
         }
-        startForeground(NOTIFICATION_ID, buildNotification(AppPreferences.DEFAULT_HTTP_PORT))
+        promoteForeground(proxyDown = false)
 
         val repository = (application as PylonApplication).networkRepository
         repository.migrateStoredNetworkIds()
@@ -142,6 +220,7 @@ class PylonService : LifecycleService() {
             return
         }
         nodeStarted = true
+        nodePausedForDoze = false
 
         val nodeId = ZeroTierNodeManager.formatNodeId(nodeManager.state.value.nodeId ?: 0L)
         updateState {
@@ -165,6 +244,11 @@ class PylonService : LifecycleService() {
             startProxies()
         } else {
             appendLog("Proxy disabled; node running without local proxy")
+        }
+
+        if (idleGate.allowPeriodicWork) {
+            startHealthLoop()
+            startWatchdogIfEnabled()
         }
 
         updateState { copy(statusMessage = "Running") }
@@ -263,15 +347,25 @@ class PylonService : LifecycleService() {
         val socksEnabled = preferences.socks5Enabled.first()
         val lookup: (Long?) -> PylonNetwork? = { id -> id?.let(networkConfigs::get) }
 
-        httpProxy = HttpProxyServer(httpPort, routeResolver, dnsResolver, rulesEngine, lookup).also {
-            it.start()
-        }
+        httpProxy = HttpProxyServer(
+            httpPort,
+            routeResolver,
+            dnsResolver,
+            rulesEngine,
+            lookup,
+            onDied = { onListenDied() },
+        ).also { it.start() }
         appendLog("HTTP proxy on 127.0.0.1:$httpPort")
 
         if (socksEnabled) {
-            socks5Proxy = Socks5ProxyServer(socksPort, routeResolver, dnsResolver, rulesEngine, lookup).also {
-                it.start()
-            }
+            socks5Proxy = Socks5ProxyServer(
+                socksPort,
+                routeResolver,
+                dnsResolver,
+                rulesEngine,
+                lookup,
+                onDied = { onListenDied() },
+            ).also { it.start() }
             appendLog("SOCKS5 proxy on 127.0.0.1:$socksPort")
         }
 
@@ -291,18 +385,24 @@ class PylonService : LifecycleService() {
             )
         }
         preferences.setProxyEnabled(true)
-        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(httpPort))
+        if (idleGate.allowPeriodicWork) {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, buildNotification(httpPort, proxyDown = false))
+        }
     }
 
-    private suspend fun stopProxies() {
-        systemProxyManager.disable().onFailure {
-            appendLog("Failed to restore system proxy: ${it.message}")
-        }
+    private fun stopProxySockets() {
         httpProxy?.stop()
         httpProxy = null
         socks5Proxy?.stop()
         socks5Proxy = null
+    }
+
+    private suspend fun stopProxies() {
+        systemProxyManager.disableBlocking().onFailure {
+            appendLog("Failed to restore system proxy: ${it.message}")
+        }
+        stopProxySockets()
         updateState {
             copy(
                 httpProxyPort = null,
@@ -316,21 +416,170 @@ class PylonService : LifecycleService() {
         preferences.setProxyEnabled(enabled)
         if (enabled) {
             if (nodeStarted) startProxies()
+            if (idleGate.allowPeriodicWork) startHealthLoop()
         } else {
+            stopHealthLoop()
             stopProxies()
         }
         updateState { copy(proxyEnabled = enabled) }
     }
 
+    private fun onListenDied() {
+        if (!recovering.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                recoverProxies()
+            } finally {
+                recovering.set(false)
+            }
+        }
+    }
+
+    private suspend fun recoverProxies() {
+        if (!_state.value.proxyEnabled) return
+        val port = httpProxy?.listenPort ?: preferences.httpProxyPort.first()
+        val httpOk = httpProxy?.isListening == true || probeTcp(port)
+        val socks = socks5Proxy
+        val socksOk = socks == null || socks.isListening || probeTcp(socks.listenPort)
+        if (httpOk && socksOk && httpProxy?.isListening == true) return
+
+        appendLog("Proxy listen dead; clearing system proxy")
+        systemProxyManager.disableBlocking()
+        stopProxySockets()
+        updateState {
+            copy(
+                httpProxyPort = null,
+                socks5ProxyPort = null,
+                systemProxyActive = false,
+            )
+        }
+
+        if (!_state.value.isRunning || !preferences.proxyEnabled.first()) {
+            notifyProxyDown()
+            return
+        }
+
+        runCatching { startProxies() }
+            .onFailure { error ->
+                appendLog("Proxy rebind failed: ${error.message}")
+                notifyProxyDown()
+            }
+    }
+
+    private fun probeTcp(port: Int): Boolean {
+        return runCatching {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("127.0.0.1", port), 400)
+                true
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun startHealthLoop() {
+        if (healthJob?.isActive == true) return
+        healthJob = scope.launch {
+            var backoff = HEALTH_MIN_BACKOFF_MS
+            while (isActive) {
+                delay(backoff)
+                if (!idleGate.allowPeriodicWork) continue
+                if (!_state.value.isRunning || !_state.value.proxyEnabled) continue
+                val http = httpProxy ?: continue
+                val now = SystemClock.elapsedRealtime()
+                if (http.lastAcceptAtElapsed > 0 && now - http.lastAcceptAtElapsed < TRAFFIC_HEARTBEAT_MS) {
+                    backoff = HEALTH_MIN_BACKOFF_MS
+                    continue
+                }
+                val socks = socks5Proxy
+                val socksOk = socks == null || socks.isListening
+                if (http.isListening && socksOk) {
+                    backoff = (backoff * 2).coerceAtMost(HEALTH_MAX_BACKOFF_MS)
+                    continue
+                }
+                recoverProxies()
+                backoff = HEALTH_MIN_BACKOFF_MS
+            }
+        }
+    }
+
+    private fun stopHealthLoop() {
+        healthJob?.cancel()
+        healthJob = null
+    }
+
+    private fun startWatchdogIfEnabled() {
+        if (preferences.privilegedWatchdogEnabledBlocking()) {
+            ProxyWatchdog.startIfNeeded(this)
+        }
+    }
+
+    private fun onBecameIdle(deviceIdle: Boolean) {
+        stopHealthLoop()
+        ProxyWatchdog.stop(this)
+        if (deviceIdle && preferences.pauseNodeInDozeBlocking() && nodeStarted && !nodePausedForDoze) {
+            scope.launch { pauseNodeForDoze() }
+        }
+    }
+
+    private suspend fun onBecameInteractive() {
+        oneShotListenCheck()
+        if (_state.value.isRunning && _state.value.proxyEnabled) {
+            startHealthLoop()
+        }
+        startWatchdogIfEnabled()
+        if (nodePausedForDoze) {
+            resumeNodeFromDoze()
+        }
+    }
+
+    private fun oneShotListenCheck() {
+        if (!_state.value.isRunning || !_state.value.proxyEnabled) return
+        val http = httpProxy
+        if (http == null || !http.isListening) {
+            onListenDied()
+        }
+    }
+
+    private suspend fun pauseNodeForDoze() {
+        appendLog("Pausing ZeroTier node for Doze")
+        pausedNetworks.clear()
+        pausedNetworks.addAll(networkConfigs.values)
+        for (network in pausedNetworks) {
+            nodeManager.leave(network.networkIdLong())
+        }
+        nodeManager.stop()
+        nodeStarted = false
+        nodePausedForDoze = true
+        updateState { copy(nodeStatus = NodeStatus.STOPPED, statusMessage = "ZeroTier paused (Doze)") }
+    }
+
+    private suspend fun resumeNodeFromDoze() {
+        if (!nodePausedForDoze) return
+        appendLog("Resuming ZeroTier node after Doze")
+        nodeManager.start().onFailure {
+            appendLog("Node resume failed: ${it.message}")
+            return
+        }
+        nodeStarted = true
+        nodePausedForDoze = false
+        for (network in pausedNetworks.toList()) {
+            joinConfiguredNetwork(network)
+        }
+        pausedNetworks.clear()
+        updateState { copy(nodeStatus = NodeStatus.ONLINE, statusMessage = "Running") }
+    }
+
     private suspend fun stopPylon() {
         updateState { copy(statusMessage = "Stopping...") }
+        stopHealthLoop()
+        ProxyWatchdog.stop(this)
         stopProxies()
         for (network in networkConfigs.values.toList()) {
             nodeManager.leave(network.networkIdLong())
         }
-        if (nodeStarted) {
+        if (nodeStarted || nodePausedForDoze) {
             nodeManager.stop()
             nodeStarted = false
+            nodePausedForDoze = false
         }
         routeResolver.clear()
         dnsResolver.clear()
@@ -340,6 +589,26 @@ class PylonService : LifecycleService() {
             PylonServiceState(hasSecureSettingsPermission = systemProxyManager.hasPermission())
         }
         stopSelf()
+    }
+
+    private fun failClosedAndStop(reason: String) {
+        appendLog(reason)
+        stopHealthLoop()
+        ProxyWatchdog.stop(this)
+        systemProxyManager.disableBlocking()
+        stopProxySockets()
+        runCatching { idleGate.unregister() }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        updateState {
+            PylonServiceState(hasSecureSettingsPermission = systemProxyManager.hasPermission())
+        }
+        stopSelf()
+    }
+
+    private fun notifyProxyDown() {
+        if (!idleGate.allowPeriodicWork) return
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildNotification(AppPreferences.DEFAULT_HTTP_PORT, proxyDown = true))
     }
 
     private fun updateNetworkJoinState(networkId: String, status: NetworkJoinStatus) {
@@ -388,16 +657,21 @@ class PylonService : LifecycleService() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(port: Int): Notification {
+    private fun buildNotification(port: Int, proxyDown: Boolean): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val text = if (proxyDown) {
+            getString(R.string.notification_proxy_down)
+        } else {
+            getString(R.string.notification_text, port)
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text, port))
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -408,6 +682,9 @@ class PylonService : LifecycleService() {
         private const val TAG = "PylonService"
         private const val CHANNEL_ID = "pylon_service"
         private const val NOTIFICATION_ID = 1
+        private const val HEALTH_MIN_BACKOFF_MS = 60_000L
+        private const val HEALTH_MAX_BACKOFF_MS = 300_000L
+        private const val TRAFFIC_HEARTBEAT_MS = 90_000L
 
         const val ACTION_START = "com.zerotier.pylon.action.START"
         const val ACTION_STOP = "com.zerotier.pylon.action.STOP"

@@ -2,11 +2,12 @@ package com.zerotier.pylon.proxy.http
 
 import android.util.Log
 import com.zerotier.pylon.data.model.PylonNetwork
+import com.zerotier.pylon.proxy.ProxyConnection
+import com.zerotier.pylon.proxy.ProxyRelay
 import com.zerotier.pylon.proxy.ProxyRulesEngine
 import com.zerotier.pylon.proxy.RouteDecision
 import com.zerotier.pylon.proxy.RouteResolver
 import com.zerotier.pylon.proxy.dns.DnsResolver
-import com.zerotier.pylon.proxy.ProxyConnection
 import com.zerotier.sockets.ZeroTierSocket
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +17,11 @@ import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class HttpProxyServer(
     private val port: Int,
@@ -28,13 +29,22 @@ class HttpProxyServer(
     private val dnsResolver: DnsResolver,
     private val rulesEngine: ProxyRulesEngine,
     private val networkLookup: (Long?) -> PylonNetwork?,
+    private val onDied: () -> Unit = {},
+    private val onAccept: () -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val lastAcceptElapsed = AtomicLong(0)
 
     val listenPort: Int get() = port
+    val lastAcceptAtElapsed: Long get() = lastAcceptElapsed.get()
+    val isListening: Boolean
+        get() {
+            val server = serverSocket
+            return running.get() && server != null && server.isBound && !server.isClosed
+        }
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -46,6 +56,8 @@ class HttpProxyServer(
             while (isActive && running.get()) {
                 runCatching {
                     val client = server.accept()
+                    lastAcceptElapsed.set(android.os.SystemClock.elapsedRealtime())
+                    onAccept()
                     launch {
                         runCatching {
                             HttpProxySession(
@@ -61,7 +73,12 @@ class HttpProxyServer(
                         }
                     }
                 }.onFailure {
-                    if (running.get()) Log.w(TAG, "accept failed", it)
+                    if (running.get()) {
+                        Log.w(TAG, "accept failed", it)
+                        if (running.compareAndSet(true, false)) {
+                            onDied()
+                        }
+                    }
                 }
             }
         }
@@ -116,7 +133,7 @@ class HttpProxySession(
         }
         val remote = openConnection(host, port, decision)
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
-        relay(client, remote)
+        ProxyRelay.relay(client, remote)
     }
 
     private fun handlePlainHttp(method: String, target: String, reader: BufferedReader) {
@@ -140,7 +157,7 @@ class HttpProxySession(
         }
         output.write("\r\n".toByteArray())
         output.flush()
-        relay(client, remote)
+        ProxyRelay.relay(client, remote)
     }
 
     private fun resolveDecision(host: String): RouteDecision {
@@ -159,37 +176,6 @@ class HttpProxySession(
             val socket = Socket()
             socket.connect(java.net.InetSocketAddress(host, port), 15_000)
             ProxyConnection.fromSocket(socket)
-        }
-    }
-
-    private fun relay(client: Socket, remote: ProxyConnection) {
-        val t1 = Thread {
-            runCatching { pump(client.getInputStream(), remote.output) }
-            runCatching { remote.close() }
-        }
-        val t2 = Thread {
-            runCatching { pump(remote.input, client.getOutputStream()) }
-            runCatching { client.shutdownOutput() }
-        }
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-        runCatching { client.close() }
-        runCatching { remote.close() }
-    }
-
-    private fun pump(input: java.io.InputStream, output: OutputStream) {
-        val buffer = ByteArray(16_384)
-        try {
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                output.write(buffer, 0, read)
-                output.flush()
-            }
-        } catch (_: java.io.IOException) {
-            // Either side closed the connection during relay.
         }
     }
 

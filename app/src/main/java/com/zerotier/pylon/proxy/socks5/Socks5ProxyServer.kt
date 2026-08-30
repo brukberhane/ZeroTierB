@@ -1,8 +1,10 @@
 package com.zerotier.pylon.proxy.socks5
 
+import android.os.SystemClock
 import android.util.Log
 import com.zerotier.pylon.data.model.PylonNetwork
 import com.zerotier.pylon.proxy.ProxyConnection
+import com.zerotier.pylon.proxy.ProxyRelay
 import com.zerotier.pylon.proxy.ProxyRulesEngine
 import com.zerotier.pylon.proxy.RouteResolver
 import com.zerotier.pylon.proxy.dns.DnsResolver
@@ -17,6 +19,8 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class Socks5ProxyServer(
     private val port: Int,
@@ -24,27 +28,45 @@ class Socks5ProxyServer(
     private val dnsResolver: DnsResolver,
     private val rulesEngine: ProxyRulesEngine,
     private val networkLookup: (Long?) -> PylonNetwork?,
+    private val onDied: () -> Unit = {},
+    private val onAccept: () -> Unit = {},
 ) {
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
-    @Volatile
-    private var running = false
+    private val running = AtomicBoolean(false)
+    private val lastAcceptElapsed = AtomicLong(0)
+
+    val listenPort: Int get() = port
+    val lastAcceptAtElapsed: Long get() = lastAcceptElapsed.get()
+    val isListening: Boolean
+        get() {
+            val server = serverSocket
+            return running.get() && server != null && server.isBound && !server.isClosed
+        }
 
     fun start() {
-        if (running) return
-        running = true
+        if (!running.compareAndSet(false, true)) return
         serverSocket = ServerSocket()
         serverSocket?.reuseAddress = true
         serverSocket?.bind(InetSocketAddress("127.0.0.1", port))
         acceptJob = scope.launch {
             val server = serverSocket ?: return@launch
-            while (isActive && running) {
+            while (isActive && running.get()) {
                 runCatching {
                     val client = server.accept()
+                    lastAcceptElapsed.set(SystemClock.elapsedRealtime())
+                    onAccept()
                     launch {
                         runCatching { Socks5Session(client, routeResolver, dnsResolver, rulesEngine, networkLookup).handle() }
                             .onFailure { Log.w(TAG, "socks5 session failed", it) }
+                    }
+                }.onFailure {
+                    if (running.get()) {
+                        Log.w(TAG, "accept failed", it)
+                        if (running.compareAndSet(true, false)) {
+                            onDied()
+                        }
                     }
                 }
             }
@@ -53,7 +75,7 @@ class Socks5ProxyServer(
     }
 
     fun stop() {
-        running = false
+        if (!running.compareAndSet(true, false)) return
         acceptJob?.cancel()
         runCatching { serverSocket?.close() }
         serverSocket = null
@@ -100,7 +122,7 @@ private class Socks5Session(
             ProxyConnection.fromSocket(socket)
         }
         reply(output, 0x00)
-        relay(client, remote)
+        ProxyRelay.relay(client, remote)
     }
 
     private fun readAddress(input: InputStream, atyp: Int): Pair<String, Int> {
@@ -151,27 +173,5 @@ private class Socks5Session(
     private fun reply(output: OutputStream, code: Int) {
         output.write(byteArrayOf(0x05, code.toByte(), 0x00, 0x01, 0, 0, 0, 0, 0, 0))
         output.flush()
-    }
-
-    private fun relay(client: Socket, remote: ProxyConnection) {
-        val t1 = Thread { runCatching { pump(client.getInputStream(), remote.output) } }
-        val t2 = Thread { runCatching { pump(remote.input, client.getOutputStream()) } }
-        t1.start(); t2.start(); t1.join(); t2.join()
-        runCatching { client.close() }
-        runCatching { remote.close() }
-    }
-
-    private fun pump(input: InputStream, output: OutputStream) {
-        val buffer = ByteArray(16_384)
-        try {
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                output.write(buffer, 0, read)
-                output.flush()
-            }
-        } catch (_: java.io.IOException) {
-            // Either side closed the connection during relay.
-        }
     }
 }
