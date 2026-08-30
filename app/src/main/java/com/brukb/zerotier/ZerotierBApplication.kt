@@ -10,6 +10,9 @@ import com.brukb.zerotier.data.NetworkRepository
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.system.LinkObserver
+import com.brukb.zerotier.system.ProxyHealthJob
+import com.brukb.zerotier.system.ProxyHealthPolicy
+import com.brukb.zerotier.system.ProxyWatchdog
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.CoroutineScope
@@ -76,6 +79,12 @@ class ZerotierBApplication : Application() {
                     mgr.disable()
                     Log.i(TAG, "Cleared stale system proxy (mode=$mode)")
                 }
+                if (ProxyHealthPolicy.shouldSchedule(mode)) {
+                    ProxyHealthJob.schedule(this@ZerotierBApplication)
+                    orchestrator.refresh()
+                } else {
+                    ProxyHealthJob.cancel(this@ZerotierBApplication)
+                }
             }
             linkObserver.start()
         }
@@ -99,6 +108,15 @@ class ZerotierBApplication : Application() {
                 }
             }
         }.onFailure { Log.w(TAG, "Shizuku listener registration failed", it) }
+        val binderListener = Shizuku.OnBinderReceivedListener {
+            appScope.launch {
+                if (!preferences.privilegedWatchdogEnabled.first()) return@launch
+                if (!ShizukuPermissionHelper.hasApiPermission()) return@launch
+                ProxyWatchdog.startIfNeeded(this@ZerotierBApplication)
+            }
+        }
+        runCatching { Shizuku.addBinderReceivedListenerSticky(binderListener) }
+            .onFailure { Log.w(TAG, "Shizuku binder listener not registered", it) }
     }
 
     companion object {

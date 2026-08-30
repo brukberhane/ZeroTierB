@@ -212,8 +212,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         if (showSettings) {
             SettingsDialog(
                 startOnBoot = uiState.startOnBoot,
+                watchdogEnabled = uiState.privilegedWatchdogEnabled,
+                pauseNodeInDoze = uiState.pauseNodeInDoze,
                 onDismiss = { showSettings = false },
                 onStartOnBoot = viewModel::setStartOnBoot,
+                onWatchdogEnabled = viewModel::setPrivilegedWatchdogEnabled,
+                onPauseNodeInDoze = viewModel::setPauseNodeInDoze,
             )
         }
         if (showBatteryOpt) {
@@ -393,9 +397,15 @@ private fun AddNetworkDialog(
 @Composable
 private fun SettingsDialog(
     startOnBoot: Boolean,
+    watchdogEnabled: Boolean,
+    pauseNodeInDoze: Boolean,
     onDismiss: () -> Unit,
     onStartOnBoot: (Boolean) -> Unit,
+    onWatchdogEnabled: (Boolean) -> Boolean,
+    onPauseNodeInDoze: (Boolean) -> Unit,
 ) {
+    var watchdogError by remember { mutableStateOf<String?>(null) }
+    val shizukuRequired = stringResource(R.string.watchdog_needs_shizuku)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_title)) },
@@ -411,6 +421,50 @@ private fun SettingsDialog(
                 }
                 Text(
                     stringResource(R.string.start_on_boot_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.watchdog_title),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = watchdogEnabled,
+                        onCheckedChange = { enabled ->
+                            if (onWatchdogEnabled(enabled)) {
+                                watchdogError = null
+                            } else {
+                                watchdogError = shizukuRequired
+                            }
+                        },
+                    )
+                }
+                Text(
+                    stringResource(R.string.watchdog_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                watchdogError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.pause_doze_title),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = pauseNodeInDoze, onCheckedChange = onPauseNodeInDoze)
+                }
+                Text(
+                    stringResource(R.string.pause_doze_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

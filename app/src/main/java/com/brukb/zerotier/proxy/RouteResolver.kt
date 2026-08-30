@@ -71,6 +71,9 @@ class RouteResolver {
 
     @Synchronized
     fun resolveIpString(ip: String): RouteDecision {
+        if (!IpPrefix.isIpLiteral(ip)) {
+            return RouteDecision(useZeroTier = false, reason = "not an ip")
+        }
         if (networks.isEmpty()) {
             return RouteDecision(useZeroTier = false, reason = "no networks")
         }
@@ -156,6 +159,7 @@ data class IpPrefix(
     val isIpv6: Boolean,
 ) {
     fun contains(ip: String): Boolean {
+        if (!isIpLiteral(ip)) return false
         val address = InetAddress.getByName(ip)
         val target = address.address
         if (target.size != networkAddress.size) return false
@@ -172,6 +176,21 @@ data class IpPrefix(
     }
 
     companion object {
+        fun isIpLiteral(value: String): Boolean {
+            val host = value.removePrefix("[").removeSuffix("]")
+            if (host.contains(':')) {
+                return host.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.' }
+            }
+            val parts = host.split('.')
+            if (parts.size != 4) return false
+            return parts.all { part ->
+                part.isNotEmpty() &&
+                    part.length <= 3 &&
+                    part.all { it in '0'..'9' } &&
+                    part.toInt() in 0..255
+            }
+        }
+
         fun parse(cidr: String): IpPrefix {
             val parts = cidr.split('/')
             val address = InetAddress.getByName(parts[0])

@@ -96,8 +96,17 @@ class SystemProxyManagerTest {
     }
 
     @Test
-    fun loopbackProxy_formatsCorrectly() {
-        assertEquals("127.0.0.1:41275", SystemProxyManager.loopbackProxy(41275))
+    fun isOurs_matchesLocalhostAndV6Loopback() {
+        assertTrue(SystemProxyManager.isOurs("localhost:41275", 41275))
+        assertTrue(SystemProxyManager.isOurs("[::1]:41275", 41275))
+        assertFalse(SystemProxyManager.isOurs("localhost:41275", 9999))
+    }
+
+    @Test
+    fun isLoopbackProxy_localhostAndV6() {
+        assertTrue(SystemProxyManager.isLoopbackProxy("localhost:8080"))
+        assertTrue(SystemProxyManager.isLoopbackProxy("[::1]:8080"))
+        assertFalse(SystemProxyManager.isLoopbackProxy(":0"))
     }
 
     @Test

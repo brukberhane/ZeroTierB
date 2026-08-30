@@ -8,6 +8,8 @@ plugins {
 android {
     namespace = "com.brukb.zerotier"
     compileSdk = 35
+    // 35+ zipalign -P 16: uncompressed .so must start on 16KB zip offsets.
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.brukb.zerotier"
@@ -43,6 +45,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -86,6 +91,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
 

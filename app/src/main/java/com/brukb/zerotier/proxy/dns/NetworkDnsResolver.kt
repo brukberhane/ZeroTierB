@@ -11,8 +11,14 @@ class NetworkDnsResolver(
     val servers: List<String>,
 ) {
     fun shouldResolve(host: String): Boolean {
-        if (domain.isBlank()) return true
-        return host.equals(domain, ignoreCase = true) || host.endsWith(".$domain", ignoreCase = true)
+        val normalized = host.trimEnd('.').lowercase()
+        if (domain.isBlank()) {
+            return !normalized.contains('.') ||
+                normalized.endsWith(".local") ||
+                normalized.endsWith(".home.arpa")
+        }
+        val suffix = domain.trimEnd('.').lowercase()
+        return normalized == suffix || normalized.endsWith(".$suffix")
     }
 
     fun resolve(host: String): List<InetAddress> {

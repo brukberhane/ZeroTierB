@@ -6,6 +6,7 @@
     <string name="notification_text">VPN active</string>
     <string name="notification_proxy_channel_name">ZerotierB Proxy</string>
     <string name="notification_proxy_text">Proxy on 127.0.0.1:%1$d</string>
+    <string name="notification_proxy_down">Proxy down, system proxy cleared</string>
     <string name="mode_title">Mode</string>
     <string name="applying">Applying…</string>
     <string name="runtime_line">Runtime %1$s — %2$s</string>
@@ -28,6 +29,11 @@
     <string name="settings_title">Settings</string>
     <string name="start_on_boot">Restore mode on boot</string>
     <string name="start_on_boot_hint">Re-applies PROXY, VPN, or AUTO after reboot. OFF stays off.</string>
+    <string name="watchdog_title">Clear dead system proxy (Shizuku)</string>
+    <string name="watchdog_hint">Screen-on only, once per minute. Force-stop during sleep is cleared on next screen-on. In-process path covers listen death.</string>
+    <string name="watchdog_needs_shizuku">Shizuku required</string>
+    <string name="pause_doze_title">Pause ZeroTier in Doze</string>
+    <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
     <string name="links_title">Links</string>
     <string name="current_link">Current link</string>
     <string name="save_ssid">Save SSID</string>

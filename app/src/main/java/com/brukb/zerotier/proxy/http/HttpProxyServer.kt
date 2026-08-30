@@ -1,8 +1,9 @@
 package com.brukb.zerotier.proxy.http
 
 import android.util.Log
-import com.brukb.zerotier.data.model.ZerotierBNetwork
+import com.brukb.zerotier.proxy.IpPrefix
 import com.brukb.zerotier.proxy.ProxyConnection
+import com.brukb.zerotier.proxy.ProxyRelay
 import com.brukb.zerotier.proxy.RouteDecision
 import com.brukb.zerotier.proxy.RouteResolver
 import com.brukb.zerotier.proxy.dns.DnsResolver
@@ -27,13 +28,21 @@ class HttpProxyServer(
     private val port: Int,
     private val routeResolver: RouteResolver,
     private val dnsResolver: DnsResolver,
+    private val onDied: () -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
     private var acceptJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val lastAcceptElapsed = java.util.concurrent.atomic.AtomicLong(0)
 
     val boundPort: Int get() = serverSocket?.localPort ?: -1
+    val lastAcceptAtElapsed: Long get() = lastAcceptElapsed.get()
+    val isListening: Boolean
+        get() {
+            val server = serverSocket
+            return running.get() && server != null && server.isBound && !server.isClosed
+        }
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -50,6 +59,7 @@ class HttpProxyServer(
             while (isActive && running.get()) {
                 runCatching {
                     val client = server.accept()
+                    lastAcceptElapsed.set(android.os.SystemClock.elapsedRealtime())
                     launch {
                         runCatching {
                             HttpProxySession(
@@ -63,7 +73,12 @@ class HttpProxyServer(
                         }
                     }
                 }.onFailure {
-                    if (running.get()) Log.w(TAG, "accept failed", it)
+                    if (running.get()) {
+                        Log.w(TAG, "accept failed", it)
+                        if (running.compareAndSet(true, false)) {
+                            onDied()
+                        }
+                    }
                 }
             }
         }
@@ -91,6 +106,7 @@ class HttpProxySession(
     private val dnsResolver: DnsResolver,
 ) {
     fun handle() {
+        client.tcpNoDelay = true
         client.soTimeout = 60_000
         // Parse headers from a buffered byte stream and relay from the SAME
         // stream: a BufferedReader here would silently swallow request-body
@@ -156,7 +172,8 @@ class HttpProxySession(
             return
         }
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
-        relay(client, input, remote)
+        client.soTimeout = 0
+        ProxyRelay.relay(client, input, remote)
     }
 
     /**
@@ -256,9 +273,8 @@ class HttpProxySession(
     }
 
     private fun resolveDecision(host: String): RouteDecision {
-        val ipDecision = runCatching { routeResolver.resolveIpString(host) }.getOrNull()
-        if (ipDecision != null && ipDecision.useZeroTier) {
-            return ipDecision
+        if (IpPrefix.isIpLiteral(host)) {
+            return routeResolver.resolveIpString(host)
         }
         val addresses = dnsResolver.resolve(host)
         return routeResolver.resolveHost(host, addresses)
@@ -281,6 +297,7 @@ class HttpProxySession(
             val socket = ZeroTierSocket(family, ZeroTierNative.ZTS_SOCK_STREAM, 0)
             try {
                 socket.connect(InetAddress.getByName(ip), port, ZT_CONNECT_TIMEOUT_MS)
+                runCatching { socket.setTcpNoDelayEnabled(true) }
             } catch (e: Exception) {
                 runCatching { socket.close() }
                 throw e
@@ -288,14 +305,15 @@ class HttpProxySession(
             ProxyConnection.fromZeroTierSocket(socket)
         } else {
             val socket = Socket()
+            socket.tcpNoDelay = true
             socket.connect(InetSocketAddress(host, port), 15_000)
+            socket.soTimeout = 0
             ProxyConnection.fromSocket(socket)
         }
     }
 
     private fun ztConnectAddress(host: String, decision: RouteDecision): String? {
-        val literal = host.all { it.isDigit() || it == '.' } || host.contains(':')
-        if (literal) return host
+        if (IpPrefix.isIpLiteral(host)) return host
         val addresses = dnsResolver.resolve(host)
         return addresses.firstOrNull { addr ->
             val ip = addr.hostAddress ?: return@firstOrNull false
@@ -303,37 +321,8 @@ class HttpProxySession(
         }?.hostAddress
     }
 
-    private fun relay(client: Socket, clientInput: InputStream, remote: ProxyConnection) {
-        // Half-close only during relay: closing the ZT socket while the sibling
-        // pump is blocked in zts_bsd_read aborts the process (destroyed mutex).
-        val t1 = Thread {
-            runCatching { pump(clientInput, remote.output) }
-            remote.shutdownOutput()
-        }
-        val t2 = Thread {
-            runCatching { pump(remote.input, client.getOutputStream()) }
-            runCatching { client.shutdownOutput() }
-        }
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-        runCatching { client.close() }
-        remote.close()
-    }
-
-    private fun pump(input: java.io.InputStream, output: OutputStream) {
-        val buffer = ByteArray(16_384)
-        try {
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                output.write(buffer, 0, read)
-                output.flush()
-            }
-        } catch (_: IOException) {
-            // Either side closed the connection during relay.
-        }
+    private fun pump(input: InputStream, output: OutputStream) {
+        ProxyRelay.pump(input, output)
     }
 
     private fun parseHostPort(target: String, defaultPort: Int): Pair<String, Int> {

@@ -1,0 +1,66 @@
+package com.brukb.zerotier.system
+
+import android.app.job.JobInfo
+import android.app.job.JobParameters
+import android.app.job.JobScheduler
+import android.app.job.JobService
+import android.content.ComponentName
+import android.content.Context
+import android.util.Log
+import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.data.model.GlobalMode
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+/**
+ * Inexact 15-minute JobScheduler check. Deferred into Doze maintenance windows.
+ * Does not use exact/idle-while alarms, so it does not reset the Doze timer.
+ */
+class ProxyHealthJobService : JobService() {
+    override fun onStartJob(params: JobParameters?): Boolean {
+        val app = application as ZerotierBApplication
+        app.applicationScope.launch {
+            try {
+                val mode = app.preferences.globalMode.first()
+                if (!ProxyHealthPolicy.shouldSchedule(mode)) {
+                    ProxyHealthJob.cancel(this@ProxyHealthJobService)
+                    return@launch
+                }
+                app.orchestrator.refresh()
+            } finally {
+                jobFinished(params, false)
+            }
+        }
+        return true
+    }
+
+    override fun onStopJob(params: JobParameters?): Boolean = false
+}
+
+object ProxyHealthPolicy {
+    fun shouldSchedule(globalMode: GlobalMode): Boolean = globalMode != GlobalMode.OFF
+}
+
+object ProxyHealthJob {
+    const val JOB_ID = 7101
+    private const val PERIOD_MS = 15 * 60 * 1000L
+    private const val TAG = "ProxyHealthJob"
+
+    fun schedule(context: Context) {
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        val info = JobInfo.Builder(
+            JOB_ID,
+            ComponentName(context, ProxyHealthJobService::class.java),
+        )
+            .setPeriodic(PERIOD_MS)
+            .setPersisted(true)
+            .build()
+        val result = scheduler.schedule(info)
+        Log.i(TAG, "schedule periodic=$PERIOD_MS result=$result")
+    }
+
+    fun cancel(context: Context) {
+        context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+        Log.i(TAG, "cancelled")
+    }
+}

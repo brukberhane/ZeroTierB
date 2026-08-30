@@ -86,6 +86,11 @@ object ShizukuPermissionHelper {
             }
         }
 
+    fun startPrivilegedShell(script: String): Process {
+        check(hasApiPermission()) { "Shizuku not running" }
+        return invokeShizukuProcess(arrayOf("sh", "-c", script))
+    }
+
     private fun invokeShizukuProcess(cmd: Array<String>): Process {
         val method = Shizuku::class.java.getDeclaredMethod(
             "newProcess",

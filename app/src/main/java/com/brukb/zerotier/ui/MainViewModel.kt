@@ -15,8 +15,9 @@ import com.brukb.zerotier.data.model.LinkProfile
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.proxy.ProxyServiceState
-import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.system.BatteryOptimizationHelper
+import com.brukb.zerotier.system.ProxyWatchdog
+import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.vpn.VpnServiceState
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,8 @@ data class MainUiState(
     val linkProfiles: List<LinkProfile> = emptyList(),
     val linkDebounceMs: Int = AppPreferences.DEFAULT_LINK_DEBOUNCE_MS,
     val startOnBoot: Boolean = false,
+    val privilegedWatchdogEnabled: Boolean = false,
+    val pauseNodeInDoze: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,6 +56,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         app.linkProfileRepository.observeAll(),
         app.preferences.linkDebounceMs,
         app.preferences.startOnBoot,
+        app.preferences.privilegedWatchdogEnabled,
+        app.preferences.pauseNodeInDoze,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val mode = values[0] as GlobalMode
@@ -63,6 +68,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val profiles = values[5] as List<LinkProfile>
         val debounce = values[6] as Int
         val boot = values[7] as Boolean
+        val watchdog = values[8] as Boolean
+        val pauseDoze = values[9] as Boolean
         MainUiState(
             globalMode = mode,
             plan = orch.plan,
@@ -76,6 +83,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             linkProfiles = profiles,
             linkDebounceMs = debounce,
             startOnBoot = boot,
+            privilegedWatchdogEnabled = watchdog,
+            pauseNodeInDoze = pauseDoze,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -164,6 +173,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setStartOnBoot(enabled: Boolean) {
         viewModelScope.launch {
             app.preferences.setStartOnBoot(enabled)
+        }
+    }
+
+    fun setPrivilegedWatchdogEnabled(enabled: Boolean): Boolean {
+        if (enabled && !ShizukuPermissionHelper.hasApiPermission()) {
+            return false
+        }
+        viewModelScope.launch {
+            app.preferences.setPrivilegedWatchdogEnabled(enabled)
+            if (enabled) {
+                ProxyWatchdog.startIfNeeded(getApplication())
+            } else {
+                ProxyWatchdog.stop(getApplication())
+            }
+        }
+        return true
+    }
+
+    fun setPauseNodeInDoze(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setPauseNodeInDoze(enabled)
         }
     }
 

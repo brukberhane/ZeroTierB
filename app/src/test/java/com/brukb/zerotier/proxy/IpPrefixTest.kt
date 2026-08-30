@@ -26,6 +26,26 @@ class IpPrefixTest {
     }
 
     @Test
+    fun isIpLiteral_v4() {
+        assertTrue(IpPrefix.isIpLiteral("10.1.2.3"))
+        assertFalse(IpPrefix.isIpLiteral("calibre.local"))
+        assertFalse(IpPrefix.isIpLiteral("10.1.2"))
+        assertFalse(IpPrefix.isIpLiteral("10.1.2.256"))
+    }
+
+    @Test
+    fun isIpLiteral_v6() {
+        assertTrue(IpPrefix.isIpLiteral("2001:db8::1"))
+        assertTrue(IpPrefix.isIpLiteral("[2001:db8::1]"))
+    }
+
+    @Test
+    fun hostnameDoesNotContain() {
+        val prefix = IpPrefix.parse("10.0.0.0/8")
+        assertFalse(prefix.contains("example.com"))
+    }
+
+    @Test
     fun hostBitsSetStillMatchesNetwork() {
         val prefix = IpPrefix.parse("10.1.2.3/24")
         assertTrue(prefix.contains("10.1.2.9"))

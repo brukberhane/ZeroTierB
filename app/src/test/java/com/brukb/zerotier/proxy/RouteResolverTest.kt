@@ -88,6 +88,15 @@ class RouteResolverTest {
     }
 
     @Test
+    fun hostnameIsNotAnIp() {
+        val net = net("aaaa")
+        addNet(net, assigned = listOf("10.1.0.5/32"))
+        val decision = resolver.resolveIpString("calibre.local")
+        assertFalse(decision.useZeroTier)
+        assertEquals("not an ip", decision.reason)
+    }
+
+    @Test
     fun resolveHostUsesResolvedAddresses() {
         val net = net("aaaa")
         addNet(net, assigned = listOf("192.168.1.10/32"))

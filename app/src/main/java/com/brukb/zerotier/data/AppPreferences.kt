@@ -24,6 +24,8 @@ class AppPreferences(private val context: Context) {
     private val lastHttpProxyPortKey = intPreferencesKey("last_http_proxy_port")
     private val linkDebounceMsKey = intPreferencesKey("link_debounce_ms")
     private val batteryOptPromptedKey = booleanPreferencesKey("battery_opt_prompted")
+    private val privilegedWatchdogKey = booleanPreferencesKey("privileged_watchdog")
+    private val pauseNodeInDozeKey = booleanPreferencesKey("pause_node_in_doze")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -34,6 +36,12 @@ class AppPreferences(private val context: Context) {
     val lastHttpProxyPort: Flow<Int> = context.dataStore.data.map { it[lastHttpProxyPortKey] ?: 0 }
     val linkDebounceMs: Flow<Int> = context.dataStore.data.map {
         it[linkDebounceMsKey] ?: DEFAULT_LINK_DEBOUNCE_MS
+    }
+    val privilegedWatchdogEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[privilegedWatchdogKey] ?: false
+    }
+    val pauseNodeInDoze: Flow<Boolean> = context.dataStore.data.map {
+        it[pauseNodeInDozeKey] ?: false
     }
 
     suspend fun setStartOnBoot(enabled: Boolean) {
@@ -74,6 +82,14 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setBatteryOptPrompted() {
         context.dataStore.edit { it[batteryOptPromptedKey] = true }
+    }
+
+    suspend fun setPrivilegedWatchdogEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[privilegedWatchdogKey] = enabled }
+    }
+
+    suspend fun setPauseNodeInDoze(enabled: Boolean) {
+        context.dataStore.edit { it[pauseNodeInDozeKey] = enabled }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

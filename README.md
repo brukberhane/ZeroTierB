@@ -106,13 +106,29 @@ See [`planning/phases/INDEX.md`](planning/phases/INDEX.md).
 
 ## 🔨 Build / verify
 
-Requires JDK 17, Android SDK (`ANDROID_HOME`), NDK 25.1.8937393 (JNI).
+Requires JDK 17, Android SDK (`ANDROID_HOME`), NDK 25.1.8937393 (JNI). SDK CMake 3.22.1 for libzt's Android build (`sdkmanager "cmake;3.22.1"`).
 
 ```bash
-make verify          # lintDebug + unit tests + assembleDebug
-make install-hooks   # lefthook: pre-commit → make verify
+git submodule update --init --recursive
+./scripts/build-libzt.sh   # AAR → libzt/dist/android-any-android-release/libzt-release.aar
+make verify                # lintDebug + unit tests + assembleDebug
+make install-hooks         # lefthook: pre-commit → make verify
 ./gradlew :app:installDebug
+adb shell pm grant com.brukb.zerotier android.permission.WRITE_SECURE_SETTINGS
 ```
+
+`libzt` is the recorded submodule SHA on `brukberhane/libzt` (managed routes + Android JNI). Do not force-checkout branch `pylon`.
+
+### Termux
+
+```bash
+pkg update
+pkg install openjdk-17 git make cmake clang binutils
+export ANDROID_HOME="${ANDROID_HOME:-$PREFIX/opt/android-sdk}"
+./scripts/build-termux.sh
+```
+
+`build-termux.sh` builds the libzt AAR if missing, then the APK.
 
 Toolchain (this clone): **Kotlin 2.0.21**, **AGP 8.7.3**, **Compose BOM 2024.12.01**, **compileSdk 35**, **minSdk 26**. Dual-mode work must not bump these as drive-bys. Keep Compose BOM aligned with AGP/Kotlin — a newer BOM can crash Android Lint detectors.
 
