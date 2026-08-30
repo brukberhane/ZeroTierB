@@ -36,7 +36,7 @@ class ProxyHealthJobService : JobService() {
                     ProxyHealthJob.cancel(this@ProxyHealthJobService)
                     return@launch
                 }
-                app.orchestrator.refresh()
+                app.orchestrator.refresh(syncJob = false)
             } finally {
                 jobFinished(params, false)
             }
@@ -64,6 +64,10 @@ object ProxyHealthPolicy {
         if (startAllowed) return true
         return BootRestorePolicy.shouldRestore(RestoreTrigger.BOOT, startOnBoot, globalMode)
     }
+
+    /** JobScheduler.schedule() is quota-limited (250/60s). Never replace a live job. */
+    fun shouldCallScheduler(armedThisProcess: Boolean, pending: Boolean): Boolean =
+        !armedThisProcess && !pending
 }
 
 object ProxyHealthJob {
@@ -71,8 +75,19 @@ object ProxyHealthJob {
     private const val PERIOD_MS = 15 * 60 * 1000L
     private const val TAG = "ProxyHealthJob"
 
+    @Volatile
+    private var armedThisProcess = false
+
     fun schedule(context: Context) {
         val scheduler = context.getSystemService(JobScheduler::class.java)
+        if (!ProxyHealthPolicy.shouldCallScheduler(
+                armedThisProcess,
+                pending = scheduler.getPendingJob(JOB_ID) != null,
+            )
+        ) {
+            armedThisProcess = true
+            return
+        }
         val info = JobInfo.Builder(
             JOB_ID,
             ComponentName(context, ProxyHealthJobService::class.java),
@@ -81,10 +96,12 @@ object ProxyHealthJob {
             .setPersisted(true)
             .build()
         val result = scheduler.schedule(info)
+        armedThisProcess = result == JobScheduler.RESULT_SUCCESS
         Log.i(TAG, "schedule periodic=$PERIOD_MS result=$result")
     }
 
     fun cancel(context: Context) {
+        armedThisProcess = false
         context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
         Log.i(TAG, "cancelled")
     }

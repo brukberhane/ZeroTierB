@@ -51,9 +51,9 @@ class ConnectionOrchestrator(
     private val _state = MutableStateFlow(OrchestratorState())
     val state: StateFlow<OrchestratorState> = _state.asStateFlow()
 
-    suspend fun refresh() {
+    suspend fun refresh(syncJob: Boolean = true) {
         startAllowed = true
-        syncHealthJob()
+        if (syncJob) syncHealthJob()
         val globalMode = preferences.globalMode.first()
         val enabled = networkRepository.getAll().filter { it.isEnabled }
         val link = classifyLink()

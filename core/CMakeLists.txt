@@ -110,3 +110,8 @@ if(WIN32)
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${link_libs} log)
+# NDK 25 does not honor ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES. 16KB devices
+# (Android 15+) reject LOAD align 0x1000 on dlopen.
+target_link_options(${PROJECT_NAME} PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,-z,common-page-size=16384")

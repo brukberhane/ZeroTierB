@@ -61,4 +61,12 @@ class ProxyHealthPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun callSchedulerOnlyWhenNotArmedAndNotPending() {
+        assertTrue(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = false, pending = false))
+        assertFalse(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = true, pending = false))
+        assertFalse(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = false, pending = true))
+        assertFalse(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = true, pending = true))
+    }
 }
