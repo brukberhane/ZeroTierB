@@ -28,10 +28,6 @@ git -C libzt pull
 ./scripts/build-libzt.sh
 ```
 
-Requires Java 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk`).
-
-Uses NDK r28 with 16 KB page-size ELF alignment for `libzt.so` (`ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`).
-
 ## Features
 
 - Full ZeroTier node in userspace (no VPN/tun interface)
@@ -45,115 +41,44 @@ Uses NDK r28 with 16 KB page-size ELF alignment for `libzt.so` (`ANDROID_SUPPORT
 - Shizuku one-tap grant for WRITE_SECURE_SETTINGS
 - Start on boot option
 
-## Prerequisites & Requirements
+## Prerequisites
 
-### Linux Host
-
-* **JDK 17** (>= 17.0.10 required to avoid Linux cgroup v2 kernel issue)
-  * Via pacman: `sudo pacman -S jdk17-openjdk`
-  * Or via mise: `mise use java=path:/usr/lib/jvm/java-17-openjdk` (or `mise install java@17.0.14`)
-* **Android SDK & Command-line Tools** (SDK platforms: `android-35`, `android-33`)
-  * `sudo pacman -S android-tools`
-  * AUR: `yay -S android-sdk-cmdline-tools-latest android-platform-35 android-platform-33`
-* **Android NDK** (r28 or r25.1 side-by-side, e.g. `28.2.13676358` / `25.1.8937393`)
-* **CMake 3.22.1** (inside Android SDK)
-  * `sdkmanager "cmake;3.22.1"`
-* **Build essentials**: `git`, `make`, `cmake`, `which`
-
-### Termux (Android Native Build)
-
-* **Packages**:
+- **JDK 17.0.10+** (libzt Android build is Gradle 7.5 / AGP 7.3 — not JDK 18+)
+- **Android SDK** (`ANDROID_HOME`, or `sdk.dir` in `local.properties`)
+- **SDK CMake 3.22.1** — required by libzt's Android build; system CMake 4.x is not used:
   ```bash
-  pkg update && pkg install openjdk-17 git make cmake clang binutils
+  sdkmanager "cmake;3.22.1"
   ```
-* **Android SDK & NDK** for Termux:
-  * Located at `$PREFIX/opt/android-sdk` or custom `$ANDROID_HOME`
-  * NDK r28 installed in `$ANDROID_HOME/ndk/`
+- **git** (submodules)
 
----
-
-## Linux Build Steps
-
-### 1. Clone with Submodules
+## Build (Linux)
 
 ```bash
 git clone --recurse-submodules <repo-url> ZeroTierB
 cd ZeroTierB
-# If cloned without recurse:
 git submodule update --init --recursive
 git -C libzt checkout pylon
-```
 
-### 2. Environment Configuration
-
-Ensure environment variables point to your SDK and Java 17:
-
-```bash
-export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/28.2.13676358}"
-export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk}"
-export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-```
-
-Accept SDK licenses if needed:
-```bash
-sdkmanager --licenses
-```
-
-### 3. Build libzt AAR
-
-```bash
 ./scripts/build-libzt.sh
-```
-
-Generates: `libzt/dist/android-any-android-release/libzt-release.aar` referenced by `zerotier.properties`.
-
-### 4. Build APK
-
-```bash
 ./gradlew assembleDebug
 ```
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`
+AAR: `libzt/dist/android-any-android-release/libzt-release.aar`  
+APK: `app/build/outputs/apk/debug/app-debug.apk`
 
----
-
-## Termux Build Steps
-
-### 1. Install Dependencies in Termux
+## Build (Termux)
 
 ```bash
 pkg update
 pkg install openjdk-17 git make cmake clang binutils
-```
+export ANDROID_HOME="${ANDROID_HOME:-$PREFIX/opt/android-sdk}"
 
-### 2. Setup Android SDK & NDK in Termux
-
-Ensure SDK and NDK paths are exported:
-
-```bash
-export ANDROID_HOME="$PREFIX/opt/android-sdk"
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-export JAVA_HOME="$PREFIX/lib/jvm/java-17-openjdk"
-```
-
-### 3. Build Everything (AAR + APK)
-
-Use the dedicated Termux build helper:
-
-```bash
 ./scripts/build-termux.sh
 ```
 
-Or step-by-step:
+`build-termux.sh` builds the libzt AAR if missing, then the APK.
 
-```bash
-# Build libzt AAR
-./scripts/build-libzt-termux.sh
-
-# Build APK
-./gradlew assembleDebug
-```
+---
 
 ## System proxy permission
 

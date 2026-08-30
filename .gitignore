@@ -12,3 +12,4 @@ libzt/cache
 libzt/dist
 libzt/pkg/android/.gradle
 libzt/pkg/android/app/build
+mise.toml
