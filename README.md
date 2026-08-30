@@ -85,7 +85,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$PREFIX/opt/android-sdk}"
 Grant once via ADB:
 
 ```bash
-adb shell pm grant com.zerotier.pylon android.permission.WRITE_SECURE_SETTINGS
+adb shell pm grant com.brukb.zerotier android.permission.WRITE_SECURE_SETTINGS
 ```
 
 Or use the in-app **Grant via Shizuku** button (requires Shizuku installed and running).

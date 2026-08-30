@@ -2,6 +2,7 @@ package com.zerotier.pylon.proxy.http
 
 import android.util.Log
 import com.zerotier.pylon.data.model.PylonNetwork
+import com.zerotier.pylon.proxy.IpPrefix
 import com.zerotier.pylon.proxy.ProxyConnection
 import com.zerotier.pylon.proxy.ProxyRelay
 import com.zerotier.pylon.proxy.ProxyRulesEngine
@@ -106,6 +107,7 @@ class HttpProxySession(
     private val networkLookup: (Long?) -> PylonNetwork?,
 ) {
     fun handle() {
+        client.tcpNoDelay = true
         client.soTimeout = 60_000
         val reader = BufferedReader(InputStreamReader(client.getInputStream()))
         val requestLine = reader.readLine() ?: return
@@ -133,6 +135,7 @@ class HttpProxySession(
         }
         val remote = openConnection(host, port, decision)
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
+        client.soTimeout = 0
         ProxyRelay.relay(client, remote)
     }
 
@@ -157,13 +160,16 @@ class HttpProxySession(
         }
         output.write("\r\n".toByteArray())
         output.flush()
+        client.soTimeout = 0
         ProxyRelay.relay(client, remote)
     }
 
     private fun resolveDecision(host: String): RouteDecision {
-        val ipDecision = runCatching { routeResolver.resolveIpString(host) }.getOrNull()
-        if (ipDecision != null && (ipDecision.useZeroTier || ipDecision.block)) {
-            return ipDecision
+        if (IpPrefix.isIpLiteral(host)) {
+            val ipDecision = routeResolver.resolveIpString(host)
+            if (ipDecision.useZeroTier || ipDecision.block) {
+                return ipDecision
+            }
         }
         val addresses = dnsResolver.resolve(host)
         return routeResolver.resolveHost(host, addresses)
@@ -171,10 +177,14 @@ class HttpProxySession(
 
     private fun openConnection(host: String, port: Int, decision: RouteDecision): ProxyConnection {
         return if (decision.useZeroTier) {
-            ProxyConnection.fromZeroTierSocket(ZeroTierSocket(host, port))
+            val socket = ZeroTierSocket(host, port)
+            runCatching { socket.setTcpNoDelayEnabled(true) }
+            ProxyConnection.fromZeroTierSocket(socket)
         } else {
             val socket = Socket()
+            socket.tcpNoDelay = true
             socket.connect(java.net.InetSocketAddress(host, port), 15_000)
+            socket.soTimeout = 0
             ProxyConnection.fromSocket(socket)
         }
     }

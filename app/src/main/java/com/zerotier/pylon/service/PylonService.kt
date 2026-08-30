@@ -24,6 +24,7 @@ import com.zerotier.pylon.proxy.dns.DnsResolver
 import com.zerotier.pylon.proxy.http.HttpProxyServer
 import com.zerotier.pylon.proxy.socks5.Socks5ProxyServer
 import com.zerotier.pylon.system.IdleGate
+import com.zerotier.pylon.system.ProxyHealthJob
 import com.zerotier.pylon.system.ProxyWatchdog
 import com.zerotier.pylon.ui.MainActivity
 import com.zerotier.pylon.zt.ZeroTierNodeManager
@@ -181,7 +182,8 @@ class PylonService : LifecycleService() {
     }
 
     private suspend fun startPylon() {
-        if (_state.value.isRunning) {
+        val alreadyRunning = _state.value.isRunning
+        if (alreadyRunning) {
             if (idleGate.allowPeriodicWork) {
                 startHealthLoop()
                 startWatchdogIfEnabled()
@@ -251,6 +253,7 @@ class PylonService : LifecycleService() {
             startWatchdogIfEnabled()
         }
 
+        ProxyHealthJob.schedule(this)
         updateState { copy(statusMessage = "Running") }
     }
 
@@ -438,10 +441,10 @@ class PylonService : LifecycleService() {
     private suspend fun recoverProxies() {
         if (!_state.value.proxyEnabled) return
         val port = httpProxy?.listenPort ?: preferences.httpProxyPort.first()
-        val httpOk = httpProxy?.isListening == true || probeTcp(port)
+        val httpAlive = httpProxy != null && httpProxy?.isListening == true && probeTcp(port)
         val socks = socks5Proxy
-        val socksOk = socks == null || socks.isListening || probeTcp(socks.listenPort)
-        if (httpOk && socksOk && httpProxy?.isListening == true) return
+        val socksAlive = socks == null || (socks.isListening && probeTcp(socks.listenPort))
+        if (httpAlive && socksAlive) return
 
         appendLog("Proxy listen dead; clearing system proxy")
         systemProxyManager.disableBlocking()
@@ -483,15 +486,21 @@ class PylonService : LifecycleService() {
                 delay(backoff)
                 if (!idleGate.allowPeriodicWork) continue
                 if (!_state.value.isRunning || !_state.value.proxyEnabled) continue
-                val http = httpProxy ?: continue
+                val http = httpProxy
+                if (http == null) {
+                    recoverProxies()
+                    backoff = HEALTH_MIN_BACKOFF_MS
+                    continue
+                }
                 val now = SystemClock.elapsedRealtime()
                 if (http.lastAcceptAtElapsed > 0 && now - http.lastAcceptAtElapsed < TRAFFIC_HEARTBEAT_MS) {
                     backoff = HEALTH_MIN_BACKOFF_MS
                     continue
                 }
                 val socks = socks5Proxy
-                val socksOk = socks == null || socks.isListening
-                if (http.isListening && socksOk) {
+                val httpAlive = http.isListening && probeTcp(http.listenPort)
+                val socksAlive = socks == null || (socks.isListening && probeTcp(socks.listenPort))
+                if (httpAlive && socksAlive) {
                     backoff = (backoff * 2).coerceAtMost(HEALTH_MAX_BACKOFF_MS)
                     continue
                 }
@@ -534,7 +543,7 @@ class PylonService : LifecycleService() {
     private fun oneShotListenCheck() {
         if (!_state.value.isRunning || !_state.value.proxyEnabled) return
         val http = httpProxy
-        if (http == null || !http.isListening) {
+        if (http == null || !http.isListening || !probeTcp(http.listenPort)) {
             onListenDied()
         }
     }
@@ -572,6 +581,7 @@ class PylonService : LifecycleService() {
         updateState { copy(statusMessage = "Stopping...") }
         stopHealthLoop()
         ProxyWatchdog.stop(this)
+        ProxyHealthJob.cancel(this)
         stopProxies()
         for (network in networkConfigs.values.toList()) {
             nodeManager.leave(network.networkIdLong())

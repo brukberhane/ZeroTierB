@@ -7,6 +7,8 @@ import com.zerotier.pylon.data.AppDatabase
 import com.zerotier.pylon.data.AppPreferences
 import com.zerotier.pylon.data.NetworkRepository
 import com.zerotier.pylon.proxy.SystemProxyManager
+import com.zerotier.pylon.service.PylonService
+import com.zerotier.pylon.system.ProxyHealthJob
 import com.zerotier.pylon.system.ProxyWatchdog
 import com.zerotier.pylon.system.ShizukuPermissionHelper
 import rikka.shizuku.Shizuku
@@ -29,8 +31,18 @@ class PylonApplication : Application() {
 
         val wanted = preferences.serviceWantedBlocking()
         val startOnBoot = preferences.startOnBootBlocking()
-        if (!wanted && !startOnBoot) {
-            SystemProxyManager(this, preferences).clearIfOurs()
+        val proxyManager = SystemProxyManager(this, preferences)
+        val shouldRun = wanted || startOnBoot
+        val alreadyRunning = PylonService.state.value.isRunning
+        if (shouldRun) {
+            ProxyHealthJob.schedule(this)
+            if (!alreadyRunning) {
+                runCatching { PylonService.start(this) }
+                    .onFailure { Log.w(TAG, "start from Application failed", it) }
+            }
+        } else {
+            ProxyHealthJob.cancel(this)
+            proxyManager.clearIfOurs()
         }
 
         val binderListener = Shizuku.OnBinderReceivedListener {

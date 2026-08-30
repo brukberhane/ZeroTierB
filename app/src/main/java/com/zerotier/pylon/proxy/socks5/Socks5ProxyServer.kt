@@ -108,7 +108,11 @@ private class Socks5Session(
             return
         }
         val (host, port) = readAddress(input, header[3].toInt())
-        val addresses = dnsResolver.resolve(host)
+        val addresses = if (com.zerotier.pylon.proxy.IpPrefix.isIpLiteral(host)) {
+            runCatching { listOf(java.net.InetAddress.getByName(host)) }.getOrDefault(emptyList())
+        } else {
+            dnsResolver.resolve(host)
+        }
         val decision = routeResolver.resolveHost(host, addresses)
         val network = networkLookup(decision.networkId)
         if (!rulesEngine.isAllowed(host, port, network, decision) || decision.block) {
@@ -116,12 +120,19 @@ private class Socks5Session(
             return
         }
         val remote = if (decision.useZeroTier) {
-            ProxyConnection.fromZeroTierSocket(ZeroTierSocket(host, port))
+            val socket = ZeroTierSocket(host, port)
+            runCatching { socket.setTcpNoDelayEnabled(true) }
+            ProxyConnection.fromZeroTierSocket(socket)
         } else {
-            val socket = Socket().apply { connect(InetSocketAddress(host, port), 15_000) }
+            val socket = Socket()
+            socket.tcpNoDelay = true
+            socket.connect(InetSocketAddress(host, port), 15_000)
+            socket.soTimeout = 0
             ProxyConnection.fromSocket(socket)
         }
         reply(output, 0x00)
+        client.tcpNoDelay = true
+        client.soTimeout = 0
         ProxyRelay.relay(client, remote)
     }
 

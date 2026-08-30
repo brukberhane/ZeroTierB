@@ -58,6 +58,5 @@ class DnsResolver {
     private fun pickResolver(host: String): NetworkDnsResolver? {
         if (networkResolvers.isEmpty()) return null
         return networkResolvers.values.firstOrNull { it.shouldResolve(host) }
-            ?: networkResolvers.values.firstOrNull()
     }
 }

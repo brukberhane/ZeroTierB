@@ -28,7 +28,7 @@ object ProxyRelay {
     }
 
     fun pump(input: InputStream, output: OutputStream) {
-        val buffer = ByteArray(16_384)
+        val buffer = ByteArray(65_536)
         try {
             while (true) {
                 val read = input.read(buffer)

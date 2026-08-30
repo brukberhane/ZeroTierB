@@ -1,12 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#4FC3F7"
-        android:pathData="M54,24 L78,42 L78,66 L54,84 L30,66 L30,42 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,38 L66,48 L66,60 L54,70 L42,60 L42,48 Z" />
+    <!-- Official ZeroTier theta mark (dashboardicons.com / ZeroTier One), inset for adaptive safe zone. -->
+    <group
+        android:translateX="9"
+        android:translateY="9">
+        <path
+            android:fillColor="#000000"
+            android:pathData="M80,11v3H46.5l0.001,7.045C59.333,21.821 69.5,32.473 69.5,45.5S59.333,69.18 46.501,69.955L46.5,81h-3V69.955c-12.832,-0.775 -23,-11.428 -23,-24.455s10.168,-23.68 23,-24.455V14H10v-3zM23.5,45.5c0,11.37 8.826,20.679 20,21.449V24.05c-11.174,0.77 -20,10.079 -20,21.449zM46.5,24.052v42.896c11.175,-0.77 20,-10.078 20,-21.448s-8.825,-20.678 -20,-21.448z" />
+    </group>
 </vector>
