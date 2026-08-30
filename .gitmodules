@@ -1,3 +1,4 @@
 [submodule "libzt"]
 	path = libzt
 	url = https://github.com/brukberhane/libzt.git
+	branch = pylon
