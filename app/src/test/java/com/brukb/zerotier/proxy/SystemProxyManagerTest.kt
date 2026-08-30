@@ -110,6 +110,26 @@ class SystemProxyManagerTest {
     }
 
     @Test
+    fun shouldClearIfOurs_loopbackWithoutMarker() {
+        assertTrue(SystemProxyManager.shouldClearIfOurs("127.0.0.1:41275", null))
+        assertTrue(SystemProxyManager.shouldClearIfOurs("localhost:8080", null))
+        assertTrue(SystemProxyManager.shouldClearIfOurs("[::1]:8080", null))
+    }
+
+    @Test
+    fun shouldClearIfOurs_markerPortMatch() {
+        assertTrue(SystemProxyManager.shouldClearIfOurs("127.0.0.1:41275", 41275))
+        assertTrue(SystemProxyManager.shouldClearIfOurs("localhost:41275", 41275))
+    }
+
+    @Test
+    fun shouldClearIfOurs_foreignProxyNoMatch() {
+        assertFalse(SystemProxyManager.shouldClearIfOurs("10.0.0.1:3128", 41275))
+        assertFalse(SystemProxyManager.shouldClearIfOurs(null, null))
+        assertFalse(SystemProxyManager.shouldClearIfOurs(":0", 41275))
+    }
+
+    @Test
     fun adbGrantCommand_formatsCorrectly() {
         assertEquals(
             "adb shell pm grant com.brukb.zerotier android.permission.WRITE_SECURE_SETTINGS",

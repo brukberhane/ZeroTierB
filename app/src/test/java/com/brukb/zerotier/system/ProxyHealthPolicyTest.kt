@@ -17,4 +17,48 @@ class ProxyHealthPolicyTest {
     fun noScheduleWhenOff() {
         assertFalse(ProxyHealthPolicy.shouldSchedule(GlobalMode.OFF))
     }
+
+    @Test
+    fun armFromJobWhenAlreadyAllowed() {
+        assertTrue(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = true,
+                startOnBoot = false,
+                globalMode = GlobalMode.PROXY,
+            ),
+        )
+    }
+
+    @Test
+    fun armFromJobAfterBootWhenStartOnBoot() {
+        assertTrue(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = false,
+                startOnBoot = true,
+                globalMode = GlobalMode.VPN,
+            ),
+        )
+    }
+
+    @Test
+    fun noArmFromJobAfterBootWhenStartOnBootOff() {
+        assertFalse(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = false,
+                startOnBoot = false,
+                globalMode = GlobalMode.PROXY,
+            ),
+        )
+    }
+
+    @Test
+    fun noArmFromJobWhenModeOff() {
+        assertFalse(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = true,
+                startOnBoot = true,
+                globalMode = GlobalMode.OFF,
+            ),
+        )
+    }
 }

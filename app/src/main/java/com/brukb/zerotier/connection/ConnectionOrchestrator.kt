@@ -12,6 +12,8 @@ import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.data.model.LinkProfile
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.proxy.SystemProxyManager
+import com.brukb.zerotier.system.ProxyHealthJob
+import com.brukb.zerotier.system.ProxyHealthPolicy
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -42,10 +44,16 @@ class ConnectionOrchestrator(
     private val mutex = Mutex()
     private var lastApplied: RuntimePlan? = null
 
+    @Volatile
+    var startAllowed: Boolean = false
+        private set
+
     private val _state = MutableStateFlow(OrchestratorState())
     val state: StateFlow<OrchestratorState> = _state.asStateFlow()
 
     suspend fun refresh() {
+        startAllowed = true
+        syncHealthJob()
         val globalMode = preferences.globalMode.first()
         val enabled = networkRepository.getAll().filter { it.isEnabled }
         val link = classifyLink()
@@ -66,6 +74,15 @@ class ConnectionOrchestrator(
 
     suspend fun stopAll() = mutex.withLock {
         applyLocked(manualOffPlan())
+    }
+
+    private suspend fun syncHealthJob() {
+        val mode = preferences.globalMode.first()
+        if (ProxyHealthPolicy.shouldSchedule(mode)) {
+            ProxyHealthJob.schedule(context)
+        } else {
+            ProxyHealthJob.cancel(context)
+        }
     }
 
     suspend fun invalidateAppliedPlan() {

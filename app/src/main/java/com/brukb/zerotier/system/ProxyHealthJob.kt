@@ -9,6 +9,7 @@ import android.content.Context
 import android.util.Log
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
+import com.brukb.zerotier.proxy.SystemProxyManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -22,7 +23,16 @@ class ProxyHealthJobService : JobService() {
         app.applicationScope.launch {
             try {
                 val mode = app.preferences.globalMode.first()
-                if (!ProxyHealthPolicy.shouldSchedule(mode)) {
+                val startOnBoot = app.preferences.startOnBoot.first()
+                if (!ProxyHealthPolicy.shouldArmFromJob(
+                        startAllowed = app.orchestrator.startAllowed,
+                        startOnBoot = startOnBoot,
+                        globalMode = mode,
+                    )
+                ) {
+                    if (!app.orchestrator.startAllowed) {
+                        SystemProxyManager(app, app.preferences).clearIfOurs()
+                    }
                     ProxyHealthJob.cancel(this@ProxyHealthJobService)
                     return@launch
                 }
@@ -39,6 +49,21 @@ class ProxyHealthJobService : JobService() {
 
 object ProxyHealthPolicy {
     fun shouldSchedule(globalMode: GlobalMode): Boolean = globalMode != GlobalMode.OFF
+
+    /**
+     * Persisted jobs survive reboot. A fresh process has [startAllowed] false.
+     * Only arm from the job when start-on-boot would also restore; otherwise
+     * the 15-minute timer would bypass the boot toggle.
+     */
+    fun shouldArmFromJob(
+        startAllowed: Boolean,
+        startOnBoot: Boolean,
+        globalMode: GlobalMode,
+    ): Boolean {
+        if (!shouldSchedule(globalMode)) return false
+        if (startAllowed) return true
+        return BootRestorePolicy.shouldRestore(RestoreTrigger.BOOT, startOnBoot, globalMode)
+    }
 }
 
 object ProxyHealthJob {

@@ -16,10 +16,41 @@ class BootRestorePolicyTest {
     @Test
     fun noRestoreWhenOff() {
         assertFalse(BootRestorePolicy.shouldRestore(startOnBoot = true, globalMode = GlobalMode.OFF))
+        assertFalse(
+            BootRestorePolicy.shouldRestore(RestoreTrigger.PACKAGE_REPLACED, startOnBoot = true, GlobalMode.OFF),
+        )
+        assertFalse(
+            BootRestorePolicy.shouldRestore(RestoreTrigger.FOREGROUND, startOnBoot = true, GlobalMode.OFF),
+        )
     }
 
     @Test
     fun noRestoreWhenBootDisabled() {
         assertFalse(BootRestorePolicy.shouldRestore(startOnBoot = false, globalMode = GlobalMode.PROXY))
+    }
+
+    @Test
+    fun packageReplacedRestoresWithoutStartOnBoot() {
+        assertTrue(
+            BootRestorePolicy.shouldRestore(
+                RestoreTrigger.PACKAGE_REPLACED,
+                startOnBoot = false,
+                GlobalMode.PROXY,
+            ),
+        )
+        assertTrue(
+            BootRestorePolicy.shouldRestore(
+                RestoreTrigger.PACKAGE_REPLACED,
+                startOnBoot = false,
+                GlobalMode.VPN,
+            ),
+        )
+    }
+
+    @Test
+    fun foregroundRestoresWithoutStartOnBoot() {
+        assertTrue(
+            BootRestorePolicy.shouldRestore(RestoreTrigger.FOREGROUND, startOnBoot = false, GlobalMode.AUTO),
+        )
     }
 }

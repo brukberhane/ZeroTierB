@@ -66,6 +66,14 @@ class SystemProxyManager(
         runBlocking { preferences.setSavedHttpProxy(null) }
     }
 
+    fun clearIfOurs(): Result<Unit> = runCatching {
+        if (!hasPermission()) return@runCatching
+        val current = currentProxy()
+        val markerPort = markerFile(context).takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
+        if (!shouldClearIfOurs(current, markerPort)) return@runCatching
+        disableBlocking().getOrThrow()
+    }
+
     fun currentProxy(): String? {
         return try {
             Settings.Global.getString(context.contentResolver, Settings.Global.HTTP_PROXY)
@@ -134,5 +142,8 @@ class SystemProxyManager(
             proxyModeActive: Boolean,
         ): Boolean =
             !proxyModeActive && (isLoopbackProxy(current) || isOurLoopback(current, lastPort) || !saved.isNullOrBlank())
+
+        fun shouldClearIfOurs(current: String?, markerPort: Int?): Boolean =
+            isLoopbackProxy(current) || (markerPort != null && isOurs(current, markerPort))
     }
 }

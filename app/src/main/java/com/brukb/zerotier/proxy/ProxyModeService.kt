@@ -83,13 +83,16 @@ class ProxyModeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            scope.launch {
+                startStopMutex.withLock { stopProxy() }
+            }
+            return START_NOT_STICKY
+        }
+        // FGS 5s rule: sticky/null restarts also come in as startForegroundService.
+        startForegroundCompat(buildNotification(_state.value.httpProxyPort ?: 0))
         when (intent?.action) {
             ACTION_START -> {
-                // startForegroundService()'s 5s rule is satisfied here on the
-                // main thread, and isRunning flips synchronously so the
-                // orchestrator sees the in-flight start before the coroutine
-                // below gets to run.
-                startForegroundCompat(buildNotification(_state.value.httpProxyPort ?: 0))
                 if (!_state.value.isRunning) {
                     updateState { copy(isRunning = true, statusMessage = "Starting proxy...") }
                     scope.launch {
@@ -103,14 +106,7 @@ class ProxyModeService : Service() {
                     }
                 }
             }
-            ACTION_STOP -> {
-                scope.launch {
-                    startStopMutex.withLock { stopProxy() }
-                }
-                return START_NOT_STICKY
-            }
             else -> {
-                // Sticky restart after kill: orchestrator re-applies persisted mode.
                 val app = application as ZerotierBApplication
                 app.applicationScope.launch { app.orchestrator.refresh() }
             }
@@ -379,7 +375,7 @@ class ProxyModeService : Service() {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)

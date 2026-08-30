@@ -1,20 +1,27 @@
 package com.brukb.zerotier.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.system.BatteryOptimizationHelper
+import com.brukb.zerotier.system.BootRestorePolicy
+import com.brukb.zerotier.system.RestoreTrigger
 import com.brukb.zerotier.system.ShizukuPermissionHelper
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -26,13 +33,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* FGS still runs; grant only unhides the notification. */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestNotificationPermission()
         enableEdgeToEdge()
         setContent {
             MainScreen(viewModel = viewModel())
         }
         handleDebugIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val app = application as ZerotierBApplication
+        lifecycleScope.launch {
+            val mode = app.preferences.globalMode.first()
+            if (BootRestorePolicy.shouldRestore(RestoreTrigger.FOREGROUND, startOnBoot = false, mode)) {
+                app.orchestrator.refresh()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -102,6 +125,23 @@ class MainActivity : ComponentActivity() {
         runCatching {
             startActivity(BatteryOptimizationHelper.requestIgnoreIntent(this))
         }.onFailure { Log.w(TAG, "battery opt intent failed", it) }
+    }
+
+    fun openBatteryOptimizationSettingsPage() {
+        runCatching {
+            startActivity(BatteryOptimizationHelper.openSettingsIntent())
+        }.onFailure { Log.w(TAG, "battery settings page failed", it) }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun requestVpnConsentOnly() {

@@ -54,6 +54,7 @@ import com.brukb.zerotier.connection.Runtime
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.SystemProxyManager
+import com.brukb.zerotier.system.BatteryOptimizationHelper
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.ui.theme.ZerotierBTheme
 
@@ -214,10 +215,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 startOnBoot = uiState.startOnBoot,
                 watchdogEnabled = uiState.privilegedWatchdogEnabled,
                 pauseNodeInDoze = uiState.pauseNodeInDoze,
+                batteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context),
                 onDismiss = { showSettings = false },
                 onStartOnBoot = viewModel::setStartOnBoot,
                 onWatchdogEnabled = viewModel::setPrivilegedWatchdogEnabled,
                 onPauseNodeInDoze = viewModel::setPauseNodeInDoze,
+                onRequestBatteryExemption = { activity?.openBatteryOptimizationSettings() },
+                onOpenBatterySettings = { activity?.openBatteryOptimizationSettingsPage() },
             )
         }
         if (showBatteryOpt) {
@@ -399,10 +403,13 @@ private fun SettingsDialog(
     startOnBoot: Boolean,
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
+    batteryUnrestricted: Boolean,
     onDismiss: () -> Unit,
     onStartOnBoot: (Boolean) -> Unit,
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
+    onRequestBatteryExemption: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
 ) {
     var watchdogError by remember { mutableStateOf<String?>(null) }
     val shizukuRequired = stringResource(R.string.watchdog_needs_shizuku)
@@ -468,6 +475,27 @@ private fun SettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    stringResource(
+                        if (batteryUnrestricted) {
+                            R.string.battery_opt_status_ok
+                        } else {
+                            R.string.battery_opt_status_restricted
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (batteryUnrestricted) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                TextButton(onClick = onRequestBatteryExemption) {
+                    Text(stringResource(R.string.battery_opt_request))
+                }
+                TextButton(onClick = onOpenBatterySettings) {
+                    Text(stringResource(R.string.battery_opt_list))
+                }
             }
         },
         confirmButton = {

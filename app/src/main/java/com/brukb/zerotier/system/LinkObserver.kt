@@ -69,6 +69,7 @@ class LinkObserver(
 
     private suspend fun onQuietPeriod() {
         upsertDataSimIfNew()
+        if (!orchestrator.startAllowed) return
         orchestrator.refresh()
     }
 

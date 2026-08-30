@@ -50,4 +50,8 @@
     <string name="battery_opt_title">Disable battery optimization</string>
     <string name="battery_opt_body">Proxy mode runs as a background service. Allow unrestricted battery use so OEMs do not stop it when the app is swiped away.</string>
     <string name="battery_opt_action">Open settings</string>
+    <string name="battery_opt_status_ok">Battery unrestricted</string>
+    <string name="battery_opt_status_restricted">Battery optimized — OEM may kill the proxy</string>
+    <string name="battery_opt_request">Allow unrestricted</string>
+    <string name="battery_opt_list">All apps list</string>
 </resources>

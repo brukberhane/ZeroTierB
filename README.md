@@ -117,7 +117,12 @@ make install-hooks         # lefthook: pre-commit → make verify
 adb shell pm grant com.brukb.zerotier android.permission.WRITE_SECURE_SETTINGS
 ```
 
-`libzt` is the recorded submodule SHA on `brukberhane/libzt` (managed routes + Android JNI). Do not force-checkout branch `pylon`.
+`libzt` is `brukberhane/libzt` branch **`pylon`**: upstream libzt plus JNI harden, lwIP managed routes, and `zts_net_set_managed_whitelist`. Not `py311`. After clone:
+
+```bash
+git submodule update --init --recursive
+git -C libzt checkout pylon
+```
 
 ### Termux
 
