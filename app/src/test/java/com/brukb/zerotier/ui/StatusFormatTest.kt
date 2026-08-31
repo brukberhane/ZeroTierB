@@ -135,6 +135,15 @@ class StatusFormatTest {
             joinChipStatus(NodeLifecycleStatus.ONLINE, Runtime.PROXY, true, null),
         )
         assertEquals(
+            JoinStatus.REQUESTING_CONFIG,
+            joinChipStatus(
+                NodeLifecycleStatus.ONLINE,
+                Runtime.PROXY,
+                true,
+                rt(JoinStatus.REQUESTING_CONFIG),
+            ),
+        )
+        assertEquals(
             JoinStatus.ACCESS_DENIED,
             joinChipStatus(
                 NodeLifecycleStatus.ONLINE,

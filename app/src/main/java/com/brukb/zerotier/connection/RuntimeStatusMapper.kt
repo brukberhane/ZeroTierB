@@ -9,10 +9,14 @@ import com.zerotier.sdk.util.StringUtils
 
 fun ztStatusToJoinStatus(status: ZtNetworkStatus.Status): JoinStatus = when (status) {
     ZtNetworkStatus.Status.JOINING -> JoinStatus.JOINING
+    ZtNetworkStatus.Status.REQUESTING_CONFIG -> JoinStatus.REQUESTING_CONFIG
     ZtNetworkStatus.Status.OK -> JoinStatus.OK
     ZtNetworkStatus.Status.ACCESS_DENIED -> JoinStatus.ACCESS_DENIED
     ZtNetworkStatus.Status.NOT_FOUND -> JoinStatus.NOT_FOUND
     ZtNetworkStatus.Status.DOWN -> JoinStatus.DOWN
+    ZtNetworkStatus.Status.PORT_ERROR,
+    ZtNetworkStatus.Status.CLIENT_TOO_OLD,
+    -> JoinStatus.ERROR
     ZtNetworkStatus.Status.UNKNOWN -> JoinStatus.UNKNOWN
 }
 

@@ -104,19 +104,22 @@ class ProxyModeService : Service() {
                 } else {
                     updateState {
                         copy(
-                            isRunning = true,
                             statusMessage = "Starting proxy...",
                             nodeLifecycle = NodeLifecycleStatus.STARTING,
                             networkStatuses = emptyList(),
                         )
                     }
                     scope.launch {
-                        startStopMutex.withLock {
-                            startProxy(
-                                forceDebug = intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false),
-                                joinNetworkIds = joinIds(intent),
-                                startToken = intent.getLongExtra(EXTRA_START_TOKEN, 0L),
-                            )
+                        try {
+                            startStopMutex.withLock {
+                                startProxy(
+                                    forceDebug = intent.getBooleanExtra(EXTRA_FORCE_DEBUG, false),
+                                    joinNetworkIds = joinIds(intent),
+                                    startToken = intent.getLongExtra(EXTRA_START_TOKEN, 0L),
+                                )
+                            }
+                        } finally {
+                            markStartFinished()
                         }
                     }
                 }
@@ -201,8 +204,36 @@ class ProxyModeService : Service() {
             fail(it.message ?: "Node init failed")
             return
         }
-        nodeManager.start().onFailure {
+        nodeManager.start(shouldAbort = { isStartSuperseded(startToken) }).onFailure {
+            if (isStartSuperseded(startToken)) {
+                Log.i(TAG, "Node start aborted by stop")
+                runCatching { nodeManager.stop() }
+                updateState {
+                    copy(
+                        isRunning = false,
+                        statusMessage = "Stopped",
+                        nodeLifecycle = NodeLifecycleStatus.STOPPED,
+                    )
+                }
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return
+            }
             fail(it.message ?: "Node start failed")
+            return
+        }
+        if (isStartSuperseded(startToken)) {
+            Log.i(TAG, "Start superseded after node online — stopping node")
+            runCatching { nodeManager.stop() }
+            updateState {
+                copy(
+                    isRunning = false,
+                    statusMessage = "Stopped",
+                    nodeLifecycle = NodeLifecycleStatus.STOPPED,
+                )
+            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
             return
         }
         nodeStarted = true
@@ -210,6 +241,7 @@ class ProxyModeService : Service() {
         val nodeId = ZeroTierNodeManager.formatNodeId(nodeManager.state.value.nodeId ?: 0L)
         updateState {
             copy(
+                isRunning = true,
                 nodeId = nodeId,
                 statusMessage = "Node online: $nodeId",
                 nodeLifecycle = NodeLifecycleStatus.ONLINE,
@@ -347,7 +379,7 @@ class ProxyModeService : Service() {
         stopSelf()
     }
 
-    private fun fail(message: String) {
+    private suspend fun fail(message: String) {
         Log.e(TAG, message)
         updateState {
             copy(
@@ -358,7 +390,7 @@ class ProxyModeService : Service() {
                 networkStatuses = emptyList(),
             )
         }
-        scope.launch { startStopMutex.withLock { stopProxy() } }
+        stopProxy()
     }
 
     private fun updateState(block: ProxyServiceState.() -> ProxyServiceState) {
@@ -565,7 +597,7 @@ class ProxyModeService : Service() {
         nodeManager.initialize().onFailure {
             Log.w(TAG, "Node re-init failed: ${it.message}")
         }
-        nodeManager.start().onFailure {
+        nodeManager.start(shouldAbort = { !_state.value.isRunning && !nodePausedForDoze }).onFailure {
             Log.w(TAG, "Node resume failed: ${it.message}")
             updateState {
                 copy(
@@ -637,9 +669,17 @@ class ProxyModeService : Service() {
         @Volatile
         private var stoppedToken = 0L
 
+        @Volatile
+        var startInFlight: Boolean = false
+            private set
+
+        fun markStartFinished() {
+            startInFlight = false
+        }
+
         /** True when a start was requested and no stop has superseded it yet. */
         val startRequested: Boolean
-            get() = startCounter.get() > stoppedToken
+            get() = startCounter.get() > stoppedToken || startInFlight
 
         private fun isStartSuperseded(token: Long): Boolean =
             token != 0L && token <= stoppedToken
@@ -651,6 +691,7 @@ class ProxyModeService : Service() {
         fun start(context: Context, forceDebug: Boolean = false, joinNetworkIds: List<String>? = null) {
             val alreadyRunning = state.value.isRunning
             val token = if (alreadyRunning) 0L else startCounter.incrementAndGet()
+            if (!alreadyRunning) startInFlight = true
             val intent = Intent(context, ProxyModeService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_FORCE_DEBUG, forceDebug)
@@ -669,10 +710,13 @@ class ProxyModeService : Service() {
         }
 
         suspend fun stopAndAwait(context: Context, timeoutMs: Long = 15_000): Boolean {
-            if (!state.value.isRunning && !startRequested) return true
+            if (!state.value.isRunning && !startRequested && !startInFlight) return true
             stop(context)
             val stopped = withTimeoutOrNull(timeoutMs) {
-                state.first { !it.isRunning && !startRequested }
+                while (state.value.isRunning || startInFlight) {
+                    delay(50)
+                }
+                true
             }
             if (stopped == null) {
                 Log.w(TAG, "Proxy stop timed out after ${timeoutMs}ms")

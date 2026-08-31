@@ -16,6 +16,9 @@ data class ZtNetworkStatus(
         NOT_FOUND,
         DOWN,
         JOINING,
+        REQUESTING_CONFIG,
+        PORT_ERROR,
+        CLIENT_TOO_OLD,
     }
 }
 

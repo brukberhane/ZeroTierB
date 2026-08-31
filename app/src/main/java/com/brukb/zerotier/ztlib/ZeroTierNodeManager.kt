@@ -47,7 +47,10 @@ class ZeroTierNodeManager(
         }
     }
 
-    suspend fun start(timeoutMs: Long = 60_000): Result<Long> = withNode {
+    suspend fun start(
+        timeoutMs: Long = 60_000,
+        shouldAbort: () -> Boolean = { false },
+    ): Result<Long> = withNode {
         runCatching {
             check(initialized.get()) { "Node not initialized" }
             val result = node.start()
@@ -62,12 +65,19 @@ class ZeroTierNodeManager(
 
             val online = withTimeoutOrNull(timeoutMs) {
                 while (!node.isOnline) {
+                    if (shouldAbort()) return@withTimeoutOrNull false
                     ZeroTierNative.zts_util_delay(50)
                 }
                 true
             } ?: false
 
-            check(online) { "Node did not come online within ${timeoutMs}ms" }
+            check(online) {
+                if (shouldAbort()) {
+                    "Node start aborted"
+                } else {
+                    "Node did not come online within ${timeoutMs}ms"
+                }
+            }
 
             val nodeId = node.id
             _state.value = _state.value.copy(isOnline = true, nodeId = nodeId)
@@ -96,8 +106,8 @@ class ZeroTierNodeManager(
                     it.allowGlobal,
                     it.allowDefault,
                 )
-                check(settingsResult == ZeroTierNative.ZTS_ERR_OK) {
-                    "zts_net_set_settings failed: $settingsResult"
+                if (settingsResult != ZeroTierNative.ZTS_ERR_OK) {
+                    Log.w(TAG, "zts_net_set_settings failed: $settingsResult — joining anyway")
                 }
             }
             updateNetworkStatus(networkId, ZtNetworkStatus.Status.JOINING)
@@ -177,10 +187,12 @@ class ZeroTierNodeManager(
 
     private fun mapNetworkStatus(code: Int): ZtNetworkStatus.Status {
         return when (code) {
+            0 -> ZtNetworkStatus.Status.REQUESTING_CONFIG
             1 -> ZtNetworkStatus.Status.OK
             2 -> ZtNetworkStatus.Status.ACCESS_DENIED
             3 -> ZtNetworkStatus.Status.NOT_FOUND
-            0 -> ZtNetworkStatus.Status.JOINING
+            4 -> ZtNetworkStatus.Status.PORT_ERROR
+            5 -> ZtNetworkStatus.Status.CLIENT_TOO_OLD
             else -> ZtNetworkStatus.Status.UNKNOWN
         }
     }
@@ -216,6 +228,9 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_ADDR_ADDED_IP6,
             -> {
                 refreshNetworkInfoAsync(id)
+            }
+            ZeroTierNative.ZTS_EVENT_NETWORK_REQ_CONFIG -> {
+                updateNetworkStatus(id, ZtNetworkStatus.Status.REQUESTING_CONFIG)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_ACCESS_DENIED -> {
                 updateNetworkStatus(id, ZtNetworkStatus.Status.ACCESS_DENIED)

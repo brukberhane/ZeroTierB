@@ -131,8 +131,9 @@ class ZerotierBVpnService :
                 val socket = DatagramSocket(null).apply {
                     reuseAddress = true
                     soTimeout = 1000
-                    bind(InetSocketAddress(9994))
+                    bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), 9994))
                 }
+                Log.i(TAG, "UDP bound localPort=${socket.localPort} ipv4=0.0.0.0")
                 if (!protect(socket)) {
                     markStopped()
                     updateState {
@@ -178,8 +179,8 @@ class ZerotierBVpnService :
                     copy(
                         isRunning = true,
                         nodeId = StringUtils.addressToString(ztNode.address()),
-                        statusMessage = "Node online",
-                        nodeLifecycle = NodeLifecycleStatus.ONLINE,
+                        statusMessage = "Waiting for roots",
+                        nodeLifecycle = NodeLifecycleStatus.STARTING,
                     )
                 }
                 udpThread = Thread(udp, "UDP Listen Thread").also { it.start() }
@@ -226,7 +227,38 @@ class ZerotierBVpnService :
     }
 
     override fun onEvent(event: Event) {
-        Log.d(TAG, "ZT event: $event")
+        Log.i(TAG, "ZT event: $event")
+        when (event) {
+            Event.EVENT_ONLINE -> {
+                updateState {
+                    copy(
+                        nodeLifecycle = NodeLifecycleStatus.ONLINE,
+                        statusMessage = if (statusMessage.startsWith("VPN active")) {
+                            statusMessage
+                        } else {
+                            "Node online"
+                        },
+                    )
+                }
+            }
+            Event.EVENT_OFFLINE -> {
+                updateState {
+                    copy(
+                        nodeLifecycle = NodeLifecycleStatus.STARTING,
+                        statusMessage = "Node offline — waiting for roots",
+                    )
+                }
+            }
+            Event.EVENT_FATAL_ERROR_IDENTITY_COLLISION -> {
+                updateState {
+                    copy(
+                        nodeLifecycle = NodeLifecycleStatus.ERROR,
+                        statusMessage = "Identity collision",
+                    )
+                }
+            }
+            else -> {}
+        }
     }
 
     override fun onTrace(message: String) {

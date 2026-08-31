@@ -224,7 +224,10 @@ class ConnectionOrchestrator(
     private suspend fun awaitUdpPortReleased(port: Int, timeoutMs: Long = 5_000) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (isUdpPortFree(port)) return
+            if (isUdpPortFree(port)) {
+                Log.i(TAG, "UDP port $port free")
+                return
+            }
             delay(200)
         }
         throw IllegalStateException("UDP port $port still busy — previous stack not fully stopped")

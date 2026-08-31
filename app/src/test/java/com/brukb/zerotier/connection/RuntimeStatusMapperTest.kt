@@ -12,10 +12,16 @@ class RuntimeStatusMapperTest {
     @Test
     fun ztStatusToJoinStatus_allValues() {
         assertEquals(JoinStatus.JOINING, ztStatusToJoinStatus(ZtNetworkStatus.Status.JOINING))
+        assertEquals(
+            JoinStatus.REQUESTING_CONFIG,
+            ztStatusToJoinStatus(ZtNetworkStatus.Status.REQUESTING_CONFIG),
+        )
         assertEquals(JoinStatus.OK, ztStatusToJoinStatus(ZtNetworkStatus.Status.OK))
         assertEquals(JoinStatus.ACCESS_DENIED, ztStatusToJoinStatus(ZtNetworkStatus.Status.ACCESS_DENIED))
         assertEquals(JoinStatus.NOT_FOUND, ztStatusToJoinStatus(ZtNetworkStatus.Status.NOT_FOUND))
         assertEquals(JoinStatus.DOWN, ztStatusToJoinStatus(ZtNetworkStatus.Status.DOWN))
+        assertEquals(JoinStatus.ERROR, ztStatusToJoinStatus(ZtNetworkStatus.Status.PORT_ERROR))
+        assertEquals(JoinStatus.ERROR, ztStatusToJoinStatus(ZtNetworkStatus.Status.CLIENT_TOO_OLD))
         assertEquals(JoinStatus.UNKNOWN, ztStatusToJoinStatus(ZtNetworkStatus.Status.UNKNOWN))
     }
 
