@@ -133,3 +133,27 @@ Does **not** cover: orchestrator internals.
 | Runtime sections truncated; no scroll in detail dialog | `AlertDialog` body not scrollable | `Column(Modifier.verticalScroll(rememberScrollState()))` in dialog `text` — no nested `LazyColumn` |
 
 <!-- last-verified: 2026-08-31 -->
+
+### `Copy snackbar missing in dialog or sheet`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Clipboard works but no "Copied" toast from detail/settings | `AlertDialog` / `ModalBottomSheet` are separate windows from main `Scaffold` | Local `SnackbarHostState` inside each overlay; main screen keeps its own host for hero/grant |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `Home hero and network list do not scroll together`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Hero fixed while only the list scrolls; or unbounded `LazyColumn` warning | `LazyColumn` nested in a non-scroll `Column` with hero above it | One `Column(Modifier.verticalScroll)` + `forEach` for typical small ZT lists — do not nest `LazyColumn` inside `verticalScroll` |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `STOPPED lifecycle chip looks like an error`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Hero shows harsh default chip chrome when runtime is OFF / node stopped | Disabled `AssistChip` with no role colors | Map non-ERROR lifecycle to NEUTRAL (`tertiaryContainer`); reserve `errorContainer` for `ERROR` only |
+
+<!-- last-verified: 2026-08-31 -->

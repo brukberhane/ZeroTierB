@@ -112,6 +112,15 @@ class StatusFormatTest {
     }
 
     @Test
+    fun heroLifecycleChipRole_table() {
+        assertEquals(JoinStatusChipRole.NEUTRAL, heroLifecycleChipRole(NodeLifecycleStatus.STOPPED))
+        assertEquals(JoinStatusChipRole.NEUTRAL, heroLifecycleChipRole(NodeLifecycleStatus.PAUSED_DOZE))
+        assertEquals(JoinStatusChipRole.NEUTRAL, heroLifecycleChipRole(NodeLifecycleStatus.ONLINE))
+        assertEquals(JoinStatusChipRole.NEUTRAL, heroLifecycleChipRole(NodeLifecycleStatus.STARTING))
+        assertEquals(JoinStatusChipRole.ERROR, heroLifecycleChipRole(NodeLifecycleStatus.ERROR))
+    }
+
+    @Test
     fun joinChipStatus_table() {
         fun rt(status: JoinStatus?) = status?.let {
             NetworkRuntimeStatus(networkId = "abc", joinStatus = it)

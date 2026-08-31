@@ -15,6 +15,10 @@
     <string name="vpn_consent_action">Grant VPN</string>
     <string name="networks_title">Networks</string>
     <string name="add_network">Add network</string>
+    <string name="copied">Copied</string>
+    <string name="copy_node_id">Copy node ID</string>
+    <string name="copy_network_id">Copy network ID</string>
+    <string name="empty_networks">No networks yet — tap Add to join a ZeroTier network.</string>
     <string name="status_line">Status: %1$s</string>
     <string name="join_status_joining">Joining</string>
     <string name="join_status_requesting_config">Requesting config</string>
@@ -72,7 +76,7 @@
     <string name="wifi_section">Wi-Fi</string>
     <string name="sim_section">SIM</string>
     <string name="other_section">Other</string>
-    <string name="no_saved_wifi">No saved networks</string>
+    <string name="no_saved_wifi">No saved Wi-Fi — save the current SSID above.</string>
     <string name="delete_wifi">Delete Wi-Fi profile</string>
     <string name="debounce_label">Debounce %1$d s</string>
     <string name="grant_title">System proxy not granted</string>

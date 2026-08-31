@@ -107,6 +107,13 @@ fun joinStatusChipRole(status: JoinStatus): JoinStatusChipRole = when (status) {
     -> JoinStatusChipRole.ERROR
 }
 
+fun heroLifecycleChipRole(lifecycle: NodeLifecycleStatus): JoinStatusChipRole =
+    if (lifecycle == NodeLifecycleStatus.ERROR) {
+        JoinStatusChipRole.ERROR
+    } else {
+        JoinStatusChipRole.NEUTRAL
+    }
+
 fun proxyStatusText(proxy: ProxyServiceState): String? {
     val port = proxy.httpProxyPort
     return when {

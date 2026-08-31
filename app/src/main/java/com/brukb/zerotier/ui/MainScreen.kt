@@ -3,15 +3,19 @@ package com.brukb.zerotier.ui
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -19,9 +23,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -35,6 +39,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,12 +51,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brukb.zerotier.R
@@ -63,6 +71,7 @@ import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.system.BatteryOptimizationHelper
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import com.brukb.zerotier.ui.theme.ZerotierBTheme
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,8 +103,16 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val copiedMessage = stringResource(R.string.copied)
+    fun showCopied() {
+        scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
+    }
+
     ZerotierBTheme {
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(R.string.app_name)) },
@@ -117,8 +134,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 val lifecycle = viewModel.nodeLifecycle()
                 val runtime = uiState.plan?.runtime
@@ -143,9 +162,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     isApplying = uiState.isApplying,
                     overlapWarning = viewModel.overlapWarning(uiState.vpn),
                     error = uiState.orchestratorError,
+                    onNodeCopied = { showCopied() },
                 )
 
-                if (uiState.vpnConsentMissing) {
+                AnimatedVisibility(visible = uiState.vpnConsentMissing) {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -162,13 +182,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     }
                 }
 
-                val showGrantCard = showGrant
-                if (showGrantCard) {
+                AnimatedVisibility(visible = showGrant) {
                     GrantSecureSettingsCard(
                         shizukuAvailable = ShizukuPermissionHelper.isAvailable(),
                         adbCommand = SystemProxyManager.adbGrantCommand(context.packageName),
                         error = grantError,
                         onShizukuGrant = { viewModel.grantSecureSettings() },
+                        onCopied = { showCopied() },
                     )
                 }
 
@@ -183,21 +203,38 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     }
                 }
 
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(uiState.networks, key = { it.networkId }) { network ->
-                        NetworkRow(
-                            network = network,
-                            joinStatus = joinChipStatus(
-                                lifecycle,
-                                runtime,
-                                network.isEnabled,
-                                viewModel.networkRuntime(network.networkId),
-                            ),
-                            onOpen = { viewModel.openNetworkDetail(network) },
-                            onToggle = { viewModel.toggleNetworkEnabled(network, it) },
-                            onDelete = { viewModel.deleteNetwork(network.networkId) },
-                            onPin = { viewModel.togglePinnedMain(network) },
-                        )
+                if (uiState.networks.isEmpty()) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.empty_networks),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TextButton(onClick = { viewModel.showAddNetworkDialog(true) }) {
+                                Text(stringResource(R.string.add_network))
+                            }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        uiState.networks.forEach { network ->
+                            NetworkRow(
+                                network = network,
+                                joinStatus = joinChipStatus(
+                                    lifecycle,
+                                    runtime,
+                                    network.isEnabled,
+                                    viewModel.networkRuntime(network.networkId),
+                                ),
+                                onOpen = { viewModel.openNetworkDetail(network) },
+                                onToggle = { viewModel.toggleNetworkEnabled(network, it) },
+                                onDelete = { viewModel.deleteNetwork(network.networkId) },
+                                onPin = { viewModel.togglePinnedMain(network) },
+                            )
+                        }
                     }
                 }
             }
@@ -306,9 +343,23 @@ private fun RuntimeHeroCard(
     isApplying: Boolean,
     overlapWarning: String?,
     error: String?,
+    onNodeCopied: () -> Unit,
 ) {
     val modes = GlobalMode.entries
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val lifecycleChipRole = heroLifecycleChipRole(lifecycle)
+    val scheme = MaterialTheme.colorScheme
+    val lifecycleContainer = when (lifecycleChipRole) {
+        JoinStatusChipRole.SUCCESS -> scheme.primaryContainer
+        JoinStatusChipRole.NEUTRAL -> scheme.tertiaryContainer
+        JoinStatusChipRole.ERROR -> scheme.errorContainer
+    }
+    val lifecycleLabelColor = when (lifecycleChipRole) {
+        JoinStatusChipRole.SUCCESS -> scheme.onPrimaryContainer
+        JoinStatusChipRole.NEUTRAL -> scheme.onTertiaryContainer
+        JoinStatusChipRole.ERROR -> scheme.onErrorContainer
+    }
+    val lifecycleChipDescription = stringResource(R.string.lifecycle_chip)
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.mode_title), style = MaterialTheme.typography.titleMedium)
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -322,7 +373,7 @@ private fun RuntimeHeroCard(
                     }
                 }
             }
-            if (isApplying) {
+            AnimatedVisibility(visible = isApplying) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     LoadingIndicator(modifier = Modifier.size(24.dp))
                     Text(stringResource(R.string.applying), style = MaterialTheme.typography.bodySmall)
@@ -336,14 +387,19 @@ private fun RuntimeHeroCard(
                 onClick = {},
                 enabled = false,
                 label = { Text(stringResource(nodeLifecycleLabelRes(lifecycle))) },
-                modifier = Modifier,
+                modifier = Modifier.semantics { contentDescription = lifecycleChipDescription },
+                colors = AssistChipDefaults.assistChipColors(
+                    disabledContainerColor = lifecycleContainer,
+                    disabledLabelColor = lifecycleLabelColor,
+                ),
             )
             Text(linkLine, style = MaterialTheme.typography.bodyMedium)
             if (nodeId.isNotBlank()) {
-                Text(
-                    stringResource(R.string.node_line, nodeId),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
+                CopyableMonoText(
+                    value = nodeId,
+                    display = stringResource(R.string.node_line, nodeId),
+                    contentDescription = stringResource(R.string.copy_node_id),
+                    onCopied = onNodeCopied,
                 )
             }
             proxyLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

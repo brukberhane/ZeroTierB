@@ -99,3 +99,11 @@ Holistic verification of docs/PROXY-VPN-PLAN.md test matrix. Record what OEM hon
 - `PhysicalLink.WifiUnsaved` — readable SSID without profile; Save SSID in Links.
 - Consent banner uses `requestVpnConsent()` (no global VPN flip). Segmented VPN chip uses `requestVpnAndStart()`.
 - Compose BOM is `compose-bom-alpha:2026.08.01` (material3 1.5.0-alpha27, Expressive available). Device E2E matrix is T10. Do not bump AGP/BOM in T10.
+
+### From T15 close-out (UI rewrite A–E complete)
+
+- UI rewrite phases **A–E done** (T11 → T15). T10 is device E2E / CoS only — no new product UI.
+- `CopyableMonoText` — shared copy widget (hero node ID, detail network ID, settings node ID, ADB grant).
+- Home: single `verticalScroll` surface; empty-networks card; `SnackbarHost` on main `Scaffold`.
+- Detail/settings: local snackbar hosts (overlay windows).
+- Manual walk: hero/chips → settings → detail runtime → empty/copy/scroll (see T15 Manual test).
