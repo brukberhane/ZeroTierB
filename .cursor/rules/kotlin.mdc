@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Scope
 
-- Kotlin 2.0 / JVM 17 style in `app` and tests (see root `build.gradle.kts` — do not assume README aspirational versions)
+- Kotlin 2.2 / JVM 17 style in `app` and tests (see root `build.gradle.kts` — do not assume README aspirational versions)
 - Coroutines, Flows, JUnit 4 tests under `app/src/test`
 
 Does **not** cover: JNI C++, Gradle plugin bumps.
@@ -49,5 +49,13 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
 | Debounce test: expected 0 runs after partial `advanceTimeBy`, got action already | `advanceUntilIdle()` advances virtual time until **all** delayed jobs finish | Use `runCurrent()` + exact `advanceTimeBy`; avoid `advanceUntilIdle` mid-debounce |
+
+<!-- last-verified: 2026-08 -->
+
+### `AGP 9 kotlinOptions gone`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Unresolved `kotlinOptions`, or `ApplicationExtensionImpl cannot be cast to BaseExtension` | AGP 9 built-in Kotlin dropped `android.kotlinOptions`; applying `org.jetbrains.kotlin.android` cannot cast the AGP 9 extension | JVM 17 via `compileOptions` only. Do not re-add `kotlin-android`. Keep the Compose compiler plugin. |
 
 <!-- last-verified: 2026-08 -->

@@ -18,7 +18,7 @@ Replace the cramped `AlertDialog` settings with a **ModalBottomSheet** (or dedic
 
 ## Requirements
 
-- [ ] Settings entry: top-bar gear opens **ModalBottomSheet** (M3 stable, `compose-bom:2024.12.01`)
+- [ ] Settings entry: top-bar gear opens **ModalBottomSheet** (M3; Expressive APIs OK after T11.5 — `compose-bom-alpha` / material3 1.5.0-alpha). Do **not** bump AGP/BOM here.
 - [ ] Sections with `ListItem` / `HorizontalDivider` headers:
 
   **Reliability**
@@ -107,3 +107,9 @@ Replace the cramped `AlertDialog` settings with a **ModalBottomSheet** (or dedic
 ## Learnings
 
 *(Filled on close-out)*
+
+## Reality notes
+
+### From T11.5 close-out
+
+- Toolchain already bumped. Expressive APIs OK. Do **not** bump AGP/BOM. Pins: AGP 9.2.1, `compose-bom-alpha:2026.08.01`, material3 1.5.0-alpha27.

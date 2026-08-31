@@ -8,7 +8,7 @@
 
 ## Description
 
-Final UX pass on the T11–T14 surfaces: consistent **empty states**, light **motion** within stable M3 APIs, **copy-to-clipboard** for node ID and ADB grant command, scroll/layout fixes on small screens. Cohesive "operator dashboard" feel without new dependencies or Expressive BOM.
+Final UX pass on the T11–T14 surfaces: consistent **empty states**, light **motion** (stable M3 plus Expressive `MotionScheme` if already wired in T12 theme), **copy-to-clipboard** for node ID and ADB grant command, scroll/layout fixes on small screens. Cohesive "operator dashboard" feel. Toolchain/BOM already set in T11.5 — do not bump AGP/BOM here.
 
 ## Status History
 
@@ -41,12 +41,12 @@ Final UX pass on the T11–T14 surfaces: consistent **empty states**, light **mo
 
 - Lottie / custom illustrations
 - Navigation suite / adaptive list-detail pane
-- Compose BOM / AGP bump for M3 Expressive
+- Compose BOM / AGP bump (T11.5 already did this)
 - Haptic feedback unless trivial one-liner
 
 ## Constraints
 
-- Read `.cursor/rules/compose.mdc` — **no** `compose-bom:2025.x` bump
+- Read `.cursor/rules/compose.mdc`. Do **not** bump BOM/AGP (T11.5). Expressive motion OK if T12 already opted `MaterialExpressiveTheme`.
 - Motion must not block interaction or delay status updates
 - Copy must not include secrets (`identity.secret`)
 
@@ -108,3 +108,9 @@ make verify
 ## Learnings
 
 *(Filled on close-out)*
+
+## Reality notes
+
+### From T11.5 close-out
+
+- Pins: AGP 9.2.1 / `compose-bom-alpha:2026.08.01` / material3 1.5.0-alpha27. Do **not** bump. Expressive `MotionScheme` only if T12 already wrapped `MaterialExpressiveTheme`.

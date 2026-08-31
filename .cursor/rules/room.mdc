@@ -54,3 +54,11 @@ Does **not** cover: Compose list UI.
 | User set mobile link to VPN; later becomes PROXY | Metadata upsert overwrote `mode` | Merge: new row → PROXY default; existing → keep `mode`, update label/slot/icc only |
 
 <!-- last-verified: 2026-08 -->
+
+### `KSP2 Unit signature V`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| KSP fails: `unexpected jvm signature V` on Room DAOs | Room 2.6.x + KSP 2.3 (KSP2) mishandles Kotlin `Unit`/void on suspend DAOs | Room **2.7.x** (pin 2.7.2). Do not drop KSP2 or delete suspend DAO methods. |
+
+<!-- last-verified: 2026-08 -->

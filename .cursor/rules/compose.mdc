@@ -20,6 +20,7 @@ Does **not** cover: orchestrator internals.
 3. ZT rows: enable + Main pin. No per-ZT PROXY/VPN chips.
 4. Links screen owns SSID rows, SIM rows, Other. "Save SSID" is explicit.
 5. Show proxy port and "system proxy inactive" honestly.
+6. `compileSdk 37` / `targetSdk 35`. Expressive APIs live on `compose-bom-alpha` (stable `compose-bom` maps material3 **1.4.0**, which removed them). Product screens opt in with `@OptIn(ExperimentalMaterial3ExpressiveApi)`. Do not bump AGP/BOM as a drive-by.
 
 ## External docs
 
@@ -33,7 +34,7 @@ Does **not** cover: orchestrator internals.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| `lintDebug` aborts: `Found class …KaFunctionCall, but interface was expected` in Compose runtime detectors | Compose BOM / Compose lint jars newer than Kotlin analysis API bundled with AGP | Align Compose BOM to the AGP+Kotlin generation (e.g. `2024.12.01` with AGP 8.7 / Kotlin 2.0). Disable only the crashing detectors as a temporary bridge — do not bump AGP/Kotlin as a drive-by. |
+| `lintDebug` aborts: `Found class …KaFunctionCall, but interface was expected` in Compose runtime detectors | Compose BOM / Compose lint jars newer than the Kotlin analysis API bundled with AGP | Align **one generation** (AGP + Kotlin + Compose BOM together). Current pin: AGP 9.2 + `compose-bom-alpha`. Disable crashing detectors only as a last-resort bridge — never BOM-only bump on an older AGP. |
 
 <!-- last-verified: 2026-08 -->
 
@@ -53,11 +54,11 @@ Does **not** cover: orchestrator internals.
 
 <!-- last-verified: 2026-08 -->
 
-### `M3 Expressive BOM blocked`
+### `M3 Expressive needs alpha BOM`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| material3 1.5.0-alpha needs AGP 9 / compileSdk 37 | BOM bump on pinned AGP 8.7 | Stay on `compose-bom:2024.12.01`; use stable `SegmentedButton` + `CircularProgressIndicator` |
+| `ExperimentalMaterial3ExpressiveApi` / `MaterialExpressiveTheme` unresolved, or lint KaCall after a BOM-only bump | Stable `compose-bom` maps material3 **1.4.0** (Expressive removed). BOM-only bump on older AGP mismatches lint's Kotlin analysis API | `compose-bom-alpha` + material3 1.5.0-alpha on AGP **9.2** / `compileSdk 37`. Opt in per screen. Do not BOM-only bump on AGP 8.x. |
 
 <!-- last-verified: 2026-08 -->
 

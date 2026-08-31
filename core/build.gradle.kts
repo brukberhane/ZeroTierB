@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.zerotier.sdk"
-    compileSdk = 35
+    compileSdk = 37
     ndkVersion = "25.1.8937393"
 
     defaultConfig {

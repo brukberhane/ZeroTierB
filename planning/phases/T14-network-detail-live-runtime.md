@@ -95,3 +95,9 @@ Upgrade `NetworkDetailScreen` from static Room fields to a **live runtime panel*
 ## Learnings
 
 *(Filled on close-out)*
+
+## Reality notes
+
+### From T11.5 close-out
+
+- Toolchain already set. Reuse T12 join-status chip. No Gradle/BOM bump. Room is 2.7.2 (KSP2).

@@ -106,7 +106,7 @@ See [`planning/phases/INDEX.md`](planning/phases/INDEX.md).
 
 ## 🔨 Build / verify
 
-Requires JDK 17, Android SDK (`ANDROID_HOME`), NDK 25.1.8937393 (JNI). SDK CMake 3.22.1 for libzt's Android build (`sdkmanager "cmake;3.22.1"`).
+Requires JDK 17, Android SDK (`ANDROID_HOME`) with **`platforms;android-37.0`** (package id, not `android-37`) and **build-tools 36.0.0**, NDK 25.1.8937393 (JNI). SDK CMake 3.22.1 for libzt's Android build (`sdkmanager "cmake;3.22.1"`).
 
 ```bash
 git submodule update --init --recursive
@@ -135,7 +135,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$PREFIX/opt/android-sdk}"
 
 `build-termux.sh` builds the libzt AAR if missing, then the APK.
 
-Toolchain (this clone): **Kotlin 2.0.21**, **AGP 8.7.3**, **Compose BOM 2024.12.01**, **compileSdk 35**, **minSdk 26**. Dual-mode work must not bump these as drive-bys. Keep Compose BOM aligned with AGP/Kotlin — a newer BOM can crash Android Lint detectors.
+Toolchain (this clone, T11.5): **AGP 9.2.1**, **Gradle 9.4.1**, **Kotlin 2.2.21** (built-in Kotlin + Compose compiler plugin), **KSP 2.3.11**, **compose-bom-alpha:2026.08.01** (material3 **1.5.0-alpha27**), **compileSdk 37**, **targetSdk 35**, **minSdk 26**. SDK: `platforms/android-37.0`, build-tools **36.0.0**. Do not bump AGP/Kotlin/compileSdk as drive-bys. Stable `compose-bom` maps material3 1.4.0 (no Expressive) — keep the alpha BOM until material3 1.5 is stable.
 
 ## 🔒 Security / invariants
 

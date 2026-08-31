@@ -1,15 +1,14 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.brukb.zerotier"
-    compileSdk = 35
+    compileSdk = 37
     // 35+ zipalign -P 16: uncompressed .so must start on 16KB zip offsets.
-    buildToolsVersion = "35.0.0"
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.brukb.zerotier"
@@ -36,10 +35,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
@@ -58,15 +53,6 @@ android {
         lintConfig = file("lint.xml")
         // Unit-test sources trip Compose runtime lint (no Compose there).
         checkTestSources = false
-        // Compose/lifecycle lint detectors crash with this AGP 8.7.3 + Kotlin 2.0.21
-        // mix when BOM is mismatched; keep these off until a later alignment task.
-        disable += setOf(
-            "FlowOperatorInvokedInComposition",
-            "FrequentlyChangingValue",
-            "RememberInComposition",
-            "AutoboxingStateCreation",
-            "NullSafeMutableLiveData",
-        )
     }
 
     testOptions {
@@ -80,9 +66,9 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
-    // Compose BOM must match AGP/Kotlin analysis API. 2026.06.00 crashes lint
-    // detectors against AGP 8.7.3 + Kotlin 2.0.21 (Ka*Call class/interface).
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    // T11.5: alpha BOM for material3 1.5 Expressive (stable BOM maps 1.4.0).
+    val composeBom = platform("androidx.compose:compose-bom-alpha:2026.08.01")
+    implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.graphics:graphics-path:1.1.0")
@@ -98,9 +84,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
 
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+    ksp("androidx.room:room-compiler:2.7.2")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

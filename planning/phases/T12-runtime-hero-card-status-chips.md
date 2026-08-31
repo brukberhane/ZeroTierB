@@ -2,7 +2,7 @@
 
 **Status**: Pending  
 **Parent INDEX**: [INDEX.md](./INDEX.md)  
-**Depends-on**: T11  
+**Depends-on**: T11.5  
 **Next**: T13  
 **Layer**: L7
 
@@ -27,7 +27,7 @@ Keep global mode segmented control (OFF|PROXY|VPN|AUTO). No per-network mode chi
   - Node ID: monospace, truncated middle optional (full copy in T15)
   - Proxy line when PROXY/AUTO+proxy: `127.0.0.1:port` or "System proxy not granted"
   - Current link line (existing `formatLinkLine`)
-  - `isApplying` → `CircularProgressIndicator` (BOM 2024.12.01 — no Expressive BOM)
+  - `isApplying` → Expressive `LoadingIndicator` (or `CircularWavyProgressIndicator`) with `@OptIn(ExperimentalMaterial3ExpressiveApi::class)` — T11.5 proved `LoadingIndicator` compiles; do not fall back to `CircularProgressIndicator` unless the symbol is gone after a later BOM change
   - `vpnConsentMissing` banner unchanged behavior (consent-only path)
 - [ ] **Network rows** (`NetworkRow`):
   - Status chip from `viewModel.networkRuntime(network.networkId)` — color by join state:
@@ -39,7 +39,7 @@ Keep global mode segmented control (OFF|PROXY|VPN|AUTO). No per-network mode chi
   - Main pin + enable switch unchanged
 - [ ] **Grant card** placement: show below hero when PROXY needs `WRITE_SECURE_SETTINGS` (existing `GrantSecureSettingsCard`)
 - [ ] Strings in `res/values/strings.xml` — no hardcoded chip labels in composables
-- [ ] `@OptIn(ExperimentalMaterial3Api::class)` only where needed; no M3 Expressive BOM bump
+- [ ] `@OptIn(ExperimentalMaterial3ExpressiveApi::class)` on hero/chips that use Expressive APIs; toolchain already bumped in T11.5 (`compose-bom-alpha`, material3 1.5.0-alpha, AGP 9.2 / compileSdk 37). Do **not** bump BOM/AGP here.
 
 ## Non-goals (this task)
 
@@ -53,7 +53,7 @@ Keep global mode segmented control (OFF|PROXY|VPN|AUTO). No per-network mode chi
 - Read `.cursor/rules/compose.mdc`
 - All mode changes still via `orchestrator.applyGlobalMode()` — no service starts from composables
 - Hero must not show contradictory state (e.g. VPN node ID while PROXY runtime active)
-- Dark + dynamic theme from T09 must remain working
+- Dark + dynamic theme from T09 must remain working. Optional T11.5 hook: wrap `ZerotierBTheme`'s `MaterialTheme` with `MaterialExpressiveTheme` (one-liner in Theme.kt) — do not restyle unrelated screens.
 
 ## References
 
@@ -109,6 +109,12 @@ Keep global mode segmented control (OFF|PROXY|VPN|AUTO). No per-network mode chi
 - Per-network UI status: `MainViewModel.networkRuntime()` / `resolveNetworkRuntime(plan.runtime, …)` — not VPN-only.
 - `JoinStatus`, `NodeLifecycleStatus`, `joinStatusLabel`, `joinStatusChipRole` in `StatusFormat` — use for T12 chips.
 - Hero lifecycle: `viewModel.nodeLifecycle()` reads typed enum from active stack's service state.
+
+### From T11.5 (toolchain)
+
+- Pins: AGP **9.2.1**, Gradle **9.4.1**, Kotlin **2.2.21**, KSP **2.3.11**, `compose-bom-alpha:2026.08.01` → material3 **1.5.0-alpha27**, Room **2.7.2**, `compileSdk 37` / `targetSdk 35`.
+- `LoadingIndicator` and `MaterialExpressiveTheme` compile. Optional one-liner in `ZerotierBTheme`. Do **not** bump AGP/Kotlin/compileSdk/BOM in T12.
+- SDK: `platforms/android-37.0` (not `platforms;android-37`). Built-in Kotlin: no `kotlinOptions`.
 
 ## Learnings
 

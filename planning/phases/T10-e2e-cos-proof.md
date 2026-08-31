@@ -98,4 +98,4 @@ Holistic verification of docs/PROXY-VPN-PLAN.md test matrix. Record what OEM hon
 - UI shipped: segmented global mode, Links overlay, grant card, pin Main, dark+dynamic theme. ViewModel routes through orchestrator only.
 - `PhysicalLink.WifiUnsaved` — readable SSID without profile; Save SSID in Links.
 - Consent banner uses `requestVpnConsent()` (no global VPN flip). Segmented VPN chip uses `requestVpnAndStart()`.
-- Compose BOM `2024.12.01` (no Expressive). Device E2E matrix is T10.
+- Compose BOM is `compose-bom-alpha:2026.08.01` (material3 1.5.0-alpha27, Expressive available). Device E2E matrix is T10. Do not bump AGP/BOM in T10.

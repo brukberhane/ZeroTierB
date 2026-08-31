@@ -100,7 +100,7 @@ When a task spans multiple areas, read every applicable rule file before startin
 
 - **Product**: ZerotierB
 - **Shape**: Android application (`com.brukb.zerotier`) — one process, two exclusive ZeroTier stacks
-- **Platforms**: Android 8.0+ (API 26), `compileSdk` / `targetSdk` 35
+- **Platforms**: Android 8.0+ (API 26), `compileSdk` 37, `targetSdk` 35
 - **Primary language**: Kotlin 2.2, JVM 17
 - **Build / verify**: `make verify` → `./gradlew :app:lintDebug :app:testDebugUnitTest :core:testDebugUnitTest :app:assembleDebug`
 
@@ -190,7 +190,8 @@ NEVER do these without explicit user approval:
 
 ### Package managers / toolchain
 
-- Android Gradle Plugin + Kotlin via existing Gradle files. Do not bump AGP / `compileSdk` / Kotlin as drive-by work.
+- Android Gradle Plugin + Kotlin via existing Gradle files. Do not bump AGP / `compileSdk` / Kotlin as drive-by work. Pin (T11.5): AGP **9.2.1**, Gradle **9.4.1**, Kotlin **2.2.21**, KSP **2.3.11**, `compose-bom-alpha:2026.08.01`.
+- SDK platform for API 37 is **`platforms/android-37.0`**, not `platforms;android-37`. Do not symlink `android-37` → `android-37.0` (NDK `CXX5304` inconsistent location). AGP 9.2 resolves `compileSdk = 37` to that folder.
 - Add Shizuku / libzt AAR only in the INDEX task that needs them.
 - Java 17. Do not switch to Groovy `build.gradle` from Kotlin DSL.
 

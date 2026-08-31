@@ -4,9 +4,9 @@ Android ZeroTier client with two **exclusive** runtimes: **PROXY** (libzt + loop
 
 ## Build / verify
 
-- `make verify` = lint + unit tests + assembleDebug (pre-commit via lefthook). Requires JDK 17, `ANDROID_HOME`, NDK 25.1.8937393 (`:core`) and NDK 28.2.13676358 (`libzt/pkg/android`).
+- `make verify` = lint + unit tests + assembleDebug (pre-commit via lefthook). Requires JDK 17, `ANDROID_HOME` with `platforms/android-37.0` + build-tools 36.0.0, NDK 25.1.8937393 (`:core`) and NDK 28.2.13676358 (`libzt/pkg/android`).
 - libzt AAR: `cd libzt && ANDROID_HOME=$ANDROID_HOME ./build.sh android-aar release` → `libzt/dist/android-any-android-release/libzt-release.aar` (**gitignored local artifact** — after pulling new libzt source you must rebuild it or `:app` links a stale one).
-- Toolchain is pinned: Kotlin 2.0.21, AGP 8.7.3, Compose BOM 2024.12.01, compileSdk 35, minSdk 26. Do not bump as drive-bys.
+- Toolchain is pinned: Kotlin 2.2.21, AGP 9.2.1, Gradle 9.4.1, compose-bom-alpha 2026.08.01, compileSdk 37, targetSdk 35, minSdk 26. T11.5 approved this generation bump. Do not bump as drive-bys.
 
 ## Hard invariants (violate these and things break subtly)
 
