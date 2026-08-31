@@ -110,6 +110,7 @@ Replace the cramped `AlertDialog` settings with a **ModalBottomSheet** (or dedic
 
 ## Reality notes
 
-### From T11.5 close-out
+### From T12 close-out
 
-- Toolchain already bumped. Expressive APIs OK. Do **not** bump AGP/BOM. Pins: AGP 9.2.1, `compose-bom-alpha:2026.08.01`, material3 1.5.0-alpha27.
+- Settings still `SettingsDialog` `AlertDialog` in `MainScreen.kt` — T13 replaces with bottom sheet.
+- Reuse `JoinStatusChip` + `joinChipStatus()` patterns from T12; `MaterialExpressiveTheme` already in `ZerotierBTheme`.

@@ -111,6 +111,7 @@ make verify
 
 ## Reality notes
 
-### From T11.5 close-out
+### From T12 close-out
 
-- Pins: AGP 9.2.1 / `compose-bom-alpha:2026.08.01` / material3 1.5.0-alpha27. Do **not** bump. Expressive `MotionScheme` only if T12 already wrapped `MaterialExpressiveTheme`.
+- `MaterialExpressiveTheme` is wired in `ZerotierBTheme` (T12). Motion polish can use Expressive APIs without another theme change.
+- Copy node ID on hero is T15 — hero already shows monospace full ID.

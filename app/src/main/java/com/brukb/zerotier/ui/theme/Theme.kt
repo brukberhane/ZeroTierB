@@ -2,6 +2,8 @@ package com.brukb.zerotier.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -25,6 +27,7 @@ private val DarkColors = darkColorScheme(
     surface = Color(0xFF1C1F24),
 )
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ZerotierBTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -39,8 +42,5 @@ fun ZerotierBTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        content = content,
-    )
+    MaterialExpressiveTheme(colorScheme = colorScheme, content = content)
 }

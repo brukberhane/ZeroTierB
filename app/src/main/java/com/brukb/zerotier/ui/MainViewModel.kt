@@ -297,11 +297,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         else -> null
     }
 
-    fun runtimeStatus(networkId: String): String {
-        val runtime = networkRuntime(networkId) ?: return "—"
-        return joinStatusLabel(runtime.joinStatus)
-    }
-
     fun overlapWarning(state: VpnServiceState): String? {
         if (state.overlappingRoutes.isEmpty()) return null
         return "Overlapping routes (same priority): ${state.overlappingRoutes.joinToString()}"

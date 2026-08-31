@@ -15,7 +15,7 @@ Does **not** cover: orchestrator internals.
 
 ## Invariants
 
-1. Material 3 + existing theme. No extra design system.
+1. Material 3 + existing theme. `ZerotierBTheme` wraps **`MaterialExpressiveTheme(colorScheme = …)`** (T12) — pass the computed scheme so dynamic/dark colors survive. No extra design system.
 2. Global mode is a segmented control: OFF | PROXY | VPN | AUTO.
 3. ZT rows: enable + Main pin. No per-ZT PROXY/VPN chips.
 4. Links screen owns SSID rows, SIM rows, Other. "Save SSID" is explicit.
@@ -66,6 +66,22 @@ Does **not** cover: orchestrator internals.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Network row `Status: —` while PROXY is up and joined | ViewModel reads only the VPN stack's per-network list; proxy join state lived only inside the libzt node manager | Both runtimes publish `NetworkRuntimeStatus` on their `StateFlow`; ViewModel resolves via `plan.runtime` + `resolveNetworkRuntime` — never hard-wire VPN-only |
+| Network row shows no join status while PROXY is up | Pre-T12: `runtimeStatus()` returned `"—"` when map empty; or VPN-only read | Use `joinChipStatus(lifecycle, plan.runtime, enabled, networkRuntime)` → `JoinStatusChip`. Hide chip when OFF/disabled/`PAUSED_DOZE`/`STOPPED`; null map while ONLINE → `JOINING` |
+
+<!-- last-verified: 2026-08 -->
+
+### `Hero shows wrong stack node ID`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| PROXY runtime but hero shows VPN node ID (or vice versa) | UI used `vpn.nodeId.ifBlank { proxy.nodeId }` instead of active runtime | Hero: `viewModel.nodeId()` only — keyed off `plan.runtime` |
+
+<!-- last-verified: 2026-08 -->
+
+### `Join chip flashes JOINING during Doze`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Row chip shows Joining while hero shows Paused (Doze) | `joinChipStatus` treats null `networkRuntime` as JOINING even when lifecycle is `PAUSED_DOZE` | Return `null` (hide chip) for `PAUSED_DOZE` and `STOPPED` before the null-map → JOINING fallback |
 
 <!-- last-verified: 2026-08 -->

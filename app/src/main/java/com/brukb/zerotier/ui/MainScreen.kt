@@ -19,13 +19,16 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -47,9 +50,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.brukb.zerotier.R
+import com.brukb.zerotier.connection.JoinStatus
+import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.Runtime
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.ZerotierBNetwork
@@ -109,7 +115,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StatusCard(
+                val lifecycle = viewModel.nodeLifecycle()
+                val runtime = uiState.plan?.runtime
+                RuntimeHeroCard(
                     globalMode = uiState.globalMode,
                     onMode = { mode ->
                         if (mode == GlobalMode.AUTO) {
@@ -121,11 +129,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             viewModel.setGlobalMode(mode)
                         }
                     },
-                    runtime = uiState.plan?.runtime,
+                    runtimeHeadline = runtimeHeadline(uiState.globalMode, runtime),
                     reason = uiState.plan?.reason,
-                    nodeId = uiState.vpn.nodeId.ifBlank { uiState.proxy.nodeId.orEmpty() },
-                    status = uiState.vpn.statusMessage.takeIf { uiState.vpn.isRunning }
-                        ?: uiState.proxy.statusMessage,
+                    lifecycle = lifecycle,
+                    nodeId = viewModel.nodeId().orEmpty(),
                     linkLine = formatLinkLine(uiState.lastLink),
                     proxyLine = proxyStatusText(uiState.proxy),
                     isApplying = uiState.isApplying,
@@ -177,7 +184,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     items(uiState.networks, key = { it.networkId }) { network ->
                         NetworkRow(
                             network = network,
-                            runtimeStatus = viewModel.runtimeStatus(network.networkId),
+                            joinStatus = joinChipStatus(
+                                lifecycle,
+                                runtime,
+                                network.isEnabled,
+                                viewModel.networkRuntime(network.networkId),
+                            ),
                             onOpen = { viewModel.openNetworkDetail(network) },
                             onToggle = { viewModel.toggleNetworkEnabled(network, it) },
                             onDelete = { viewModel.deleteNetwork(network.networkId) },
@@ -259,15 +271,15 @@ private fun requestLinkPermissions(
     launcher.launch(perms)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun StatusCard(
+private fun RuntimeHeroCard(
     globalMode: GlobalMode,
     onMode: (GlobalMode) -> Unit,
-    runtime: Runtime?,
+    runtimeHeadline: String,
     reason: String?,
+    lifecycle: NodeLifecycleStatus,
     nodeId: String,
-    status: String,
     linkLine: String,
     proxyLine: String?,
     isApplying: Boolean,
@@ -291,19 +303,28 @@ private fun StatusCard(
             }
             if (isApplying) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CircularProgressIndicator()
+                    LoadingIndicator(modifier = Modifier.size(24.dp))
                     Text(stringResource(R.string.applying), style = MaterialTheme.typography.bodySmall)
                 }
             }
             Text(
-                stringResource(R.string.runtime_line, runtime?.name ?: "OFF", reason ?: "—"),
+                stringResource(R.string.runtime_line, runtimeHeadline, reason ?: "—"),
                 style = MaterialTheme.typography.bodySmall,
+            )
+            AssistChip(
+                onClick = {},
+                enabled = false,
+                label = { Text(stringResource(nodeLifecycleLabelRes(lifecycle))) },
+                modifier = Modifier,
             )
             Text(linkLine, style = MaterialTheme.typography.bodyMedium)
             if (nodeId.isNotBlank()) {
-                Text(stringResource(R.string.node_line, nodeId), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.node_line, nodeId),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
             }
-            Text(status, style = MaterialTheme.typography.bodyMedium)
             proxyLine?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             overlapWarning?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -318,7 +339,7 @@ private fun StatusCard(
 @Composable
 private fun NetworkRow(
     network: ZerotierBNetwork,
-    runtimeStatus: String,
+    joinStatus: JoinStatus?,
     onOpen: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
@@ -338,7 +359,7 @@ private fun NetworkRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(network.name.ifBlank { network.networkId }, style = MaterialTheme.typography.titleSmall)
                 Text(network.networkId, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.status_line, runtimeStatus), style = MaterialTheme.typography.bodySmall)
+                joinStatus?.let { JoinStatusChip(it) }
                 Text(
                     stringResource(R.string.route_priority_line, network.routePriority),
                     style = MaterialTheme.typography.bodySmall,

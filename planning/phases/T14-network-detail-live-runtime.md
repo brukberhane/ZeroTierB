@@ -98,6 +98,7 @@ Upgrade `NetworkDetailScreen` from static Room fields to a **live runtime panel*
 
 ## Reality notes
 
-### From T11.5 close-out
+### From T12 close-out
 
-- Toolchain already set. Reuse T12 join-status chip. No Gradle/BOM bump. Room is 2.7.2 (KSP2).
+- Reuse `JoinStatusChip(status)` on detail header — do not duplicate chip styling.
+- `joinChipStatus(lifecycle, plan.runtime, enabled, viewModel.networkRuntime(id))` for visibility rules.

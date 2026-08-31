@@ -1,8 +1,11 @@
 package com.brukb.zerotier.ui
 
 import com.brukb.zerotier.connection.JoinStatus
+import com.brukb.zerotier.connection.NetworkRuntimeStatus
 import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.PhysicalLink
+import com.brukb.zerotier.connection.Runtime
+import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.proxy.ProxyServiceState
 import org.junit.Assert.assertEquals
@@ -94,5 +97,80 @@ class StatusFormatTest {
             joinStatusChipRole(JoinStatus.OK),
             joinStatusChipRole(JoinStatus.JOINING),
         )
+    }
+
+    @Test
+    fun joinStatusChipRole_allValues() {
+        assertEquals(JoinStatusChipRole.SUCCESS, joinStatusChipRole(JoinStatus.OK))
+        assertEquals(JoinStatusChipRole.NEUTRAL, joinStatusChipRole(JoinStatus.JOINING))
+        assertEquals(JoinStatusChipRole.NEUTRAL, joinStatusChipRole(JoinStatus.REQUESTING_CONFIG))
+        JoinStatus.entries.filter {
+            it != JoinStatus.OK && it != JoinStatus.JOINING && it != JoinStatus.REQUESTING_CONFIG
+        }.forEach { status ->
+            assertEquals(JoinStatusChipRole.ERROR, joinStatusChipRole(status))
+        }
+    }
+
+    @Test
+    fun joinChipStatus_table() {
+        fun rt(status: JoinStatus?) = status?.let {
+            NetworkRuntimeStatus(networkId = "abc", joinStatus = it)
+        }
+
+        assertEquals(
+            JoinStatus.OK,
+            joinChipStatus(NodeLifecycleStatus.ONLINE, Runtime.PROXY, true, rt(JoinStatus.OK)),
+        )
+        assertEquals(
+            JoinStatus.JOINING,
+            joinChipStatus(NodeLifecycleStatus.ONLINE, Runtime.PROXY, true, null),
+        )
+        assertEquals(
+            JoinStatus.ACCESS_DENIED,
+            joinChipStatus(
+                NodeLifecycleStatus.ONLINE,
+                Runtime.VPN,
+                true,
+                rt(JoinStatus.ACCESS_DENIED),
+            ),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.ONLINE, Runtime.PROXY, false, rt(JoinStatus.OK)),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.ONLINE, Runtime.OFF, true, rt(JoinStatus.OK)),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.ONLINE, null, true, rt(JoinStatus.OK)),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.PAUSED_DOZE, Runtime.PROXY, true, rt(JoinStatus.OK)),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.PAUSED_DOZE, Runtime.PROXY, true, null),
+        )
+        assertNull(
+            joinChipStatus(NodeLifecycleStatus.STOPPED, Runtime.PROXY, true, rt(JoinStatus.JOINING)),
+        )
+        assertEquals(
+            JoinStatus.JOINING,
+            joinChipStatus(NodeLifecycleStatus.STARTING, Runtime.PROXY, true, null),
+        )
+        assertEquals(
+            JoinStatus.ERROR,
+            joinChipStatus(
+                NodeLifecycleStatus.ERROR,
+                Runtime.VPN,
+                true,
+                rt(JoinStatus.ERROR),
+            ),
+        )
+    }
+
+    @Test
+    fun runtimeHeadline_autoShowsResolved() {
+        assertEquals("AUTO (PROXY)", runtimeHeadline(GlobalMode.AUTO, Runtime.PROXY))
+        assertEquals("VPN", runtimeHeadline(GlobalMode.VPN, Runtime.VPN))
+        assertEquals("OFF", runtimeHeadline(GlobalMode.OFF, null))
     }
 }
