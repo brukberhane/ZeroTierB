@@ -17,6 +17,7 @@ import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.ztNetworkToRuntime
+import com.brukb.zerotier.connection.ztNodeStateToLifecycle
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.dns.DnsResolver
 import com.brukb.zerotier.proxy.http.HttpProxyServer
@@ -44,6 +45,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class ProxyModeService : Service() {
@@ -64,6 +66,7 @@ class ProxyModeService : Service() {
     private val recovering = AtomicBoolean(false)
     private var nodePausedForDoze = false
     private val pausedNetworks = mutableListOf<ZerotierBNetwork>()
+    private val lastAppliedRuntime = mutableMapOf<Long, ZtNetworkStatus>()
 
     override fun onCreate() {
         super.onCreate()
@@ -204,79 +207,38 @@ class ProxyModeService : Service() {
             fail(it.message ?: "Node init failed")
             return
         }
+        startNetworkStatusPump()
         nodeManager.start(shouldAbort = { isStartSuperseded(startToken) }).onFailure {
             if (isStartSuperseded(startToken)) {
                 Log.i(TAG, "Node start aborted by stop")
                 runCatching { nodeManager.stop() }
-                updateState {
-                    copy(
-                        isRunning = false,
-                        statusMessage = "Stopped",
-                        nodeLifecycle = NodeLifecycleStatus.STOPPED,
-                    )
-                }
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                finishSupersededStart()
                 return
             }
             fail(it.message ?: "Node start failed")
             return
         }
+        nodeStarted = true
         if (isStartSuperseded(startToken)) {
-            Log.i(TAG, "Start superseded after node online — stopping node")
-            runCatching { nodeManager.stop() }
-            updateState {
-                copy(
-                    isRunning = false,
-                    statusMessage = "Stopped",
-                    nodeLifecycle = NodeLifecycleStatus.STOPPED,
-                )
-            }
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            Log.i(TAG, "Start superseded after node start — stopping")
+            stopProxy()
             return
         }
-        nodeStarted = true
 
         val nodeId = ZeroTierNodeManager.formatNodeId(nodeManager.state.value.nodeId ?: 0L)
         updateState {
             copy(
-                isRunning = true,
                 nodeId = nodeId,
-                statusMessage = "Node online: $nodeId",
-                nodeLifecycle = NodeLifecycleStatus.ONLINE,
+                statusMessage = "Waiting for roots",
+                nodeLifecycle = ztNodeStateToLifecycle(nodeManager.state.value, pausedDoze = false),
             )
         }
-        publishNetworkStatusesFromNode(nodeManager.state.value)
-        Log.i(TAG, "Node online: $nodeId")
+        Log.i(TAG, "Node started: $nodeId online=${nodeManager.state.value.isOnline}")
 
         networkConfigs.clear()
         routeResolver.clear()
         dnsResolver.clear()
-
-        for (network in enabledNetworks) {
-            if (isStartSuperseded(startToken)) {
-                Log.i(TAG, "Start superseded by stop during join — aborting")
-                return
-            }
-            joinConfiguredNetwork(network, startToken)
-        }
-        if (isStartSuperseded(startToken)) {
-            Log.i(TAG, "Start superseded by stop before bind — aborting")
-            return
-        }
-
-        networkStateJob = scope.launch {
-            nodeManager.state.collect { nodeState ->
-                publishNetworkStatusesFromNode(nodeState)
-                for ((networkId, status) in nodeState.networks) {
-                    val config = networkConfigs[networkId] ?: continue
-                    if (status.status == ZtNetworkStatus.Status.OK) {
-                        applyNetworkRuntime(config, status)
-                    }
-                }
-            }
-        }
+        lastAppliedRuntime.clear()
 
         httpProxy = HttpProxyServer(0, routeResolver, dnsResolver, onDied = { onListenDied() }).also { it.start() }
         val boundPort = httpProxy?.boundPort ?: -1
@@ -288,6 +250,7 @@ class ProxyModeService : Service() {
         app.preferences.setLastHttpProxyPort(boundPort)
         updateState {
             copy(
+                isRunning = true,
                 httpProxyPort = boundPort,
                 statusMessage = "Proxy on 127.0.0.1:$boundPort",
             )
@@ -306,8 +269,16 @@ class ProxyModeService : Service() {
 
         startHealthLoop()
         startWatchdogIfEnabled()
-
         startForegroundCompat(buildNotification(boundPort))
+
+        for (network in enabledNetworks) {
+            if (isStartSuperseded(startToken)) {
+                Log.i(TAG, "Start superseded by stop during join — aborting")
+                stopProxy()
+                return
+            }
+            joinConfiguredNetwork(network, startToken)
+        }
     }
 
     private suspend fun joinConfiguredNetwork(network: ZerotierBNetwork, startToken: Long) {
@@ -332,9 +303,81 @@ class ProxyModeService : Service() {
         Log.i(TAG, "Joined ${network.networkId}")
     }
 
-    private fun publishNetworkStatusesFromNode(nodeState: ZtNodeState) {
+    private fun startNetworkStatusPump() {
+        if (networkStateJob?.isActive == true) return
+        networkStateJob = scope.launch {
+            launch {
+                nodeManager.state.collect { nodeState ->
+                    publishFromNodeState(nodeState)
+                    applyOkRoutes(nodeState)
+                }
+            }
+            while (isActive) {
+                delay(NETWORK_STATUS_POLL_MS)
+                if (nodePausedForDoze || !nodeStarted) continue
+                for (id in networkConfigs.keys.toList()) {
+                    runCatching { nodeManager.refreshNetworkInfo(id) }
+                }
+            }
+        }
+    }
+
+    private fun publishFromNodeState(nodeState: ZtNodeState) {
+        if (nodePausedForDoze) return
+        val lifecycle = ztNodeStateToLifecycle(nodeState, pausedDoze = false)
+        val formattedId = nodeState.nodeId
+            ?.takeIf { it != 0L }
+            ?.let { ZeroTierNodeManager.formatNodeId(it) }
         val statuses = nodeState.networks.map { (id, zt) -> ztNetworkToRuntime(id, zt) }
-        updateState { copy(networkStatuses = statuses) }
+        updateState {
+            val wentOffline = nodeLifecycle == NodeLifecycleStatus.ONLINE &&
+                lifecycle == NodeLifecycleStatus.STARTING
+            val cameOnline = nodeLifecycle != NodeLifecycleStatus.ONLINE &&
+                lifecycle == NodeLifecycleStatus.ONLINE
+            val nextMessage = when {
+                lifecycle == NodeLifecycleStatus.ERROR && !nodeState.lastError.isNullOrBlank() ->
+                    nodeState.lastError
+                wentOffline -> "Node offline — waiting for roots"
+                cameOnline && (httpProxyPort == null || httpProxyPort <= 0) && formattedId != null ->
+                    "Node online: $formattedId"
+                else -> statusMessage
+            }
+            copy(
+                nodeLifecycle = lifecycle,
+                nodeId = formattedId ?: nodeId,
+                networkStatuses = statuses,
+                statusMessage = nextMessage,
+            )
+        }
+    }
+
+    private fun applyOkRoutes(nodeState: ZtNodeState) {
+        for ((networkId, status) in nodeState.networks) {
+            if (status.status != ZtNetworkStatus.Status.OK) {
+                lastAppliedRuntime.remove(networkId)
+                continue
+            }
+            val config = networkConfigs[networkId] ?: continue
+            if (lastAppliedRuntime[networkId] == status) continue
+            lastAppliedRuntime[networkId] = status
+            applyNetworkRuntime(config, status)
+        }
+    }
+
+    private fun finishSupersededStart() {
+        nodeStarted = false
+        networkStateJob?.cancel()
+        networkStateJob = null
+        updateState {
+            copy(
+                isRunning = false,
+                statusMessage = "Stopped",
+                nodeLifecycle = NodeLifecycleStatus.STOPPED,
+                networkStatuses = emptyList(),
+            )
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun applyNetworkRuntime(network: ZerotierBNetwork, status: ZtNetworkStatus) {
@@ -371,6 +414,7 @@ class ProxyModeService : Service() {
             nodePausedForDoze = false
         }
         pausedNetworks.clear()
+        lastAppliedRuntime.clear()
         routeResolver.clear()
         dnsResolver.clear()
         networkConfigs.clear()
@@ -579,6 +623,8 @@ class ProxyModeService : Service() {
         for (network in pausedNetworks) {
             nodeManager.leave(network.networkIdLong())
         }
+        networkStateJob?.cancel()
+        networkStateJob = null
         nodeManager.stop()
         nodeStarted = false
         nodePausedForDoze = true
@@ -597,6 +643,7 @@ class ProxyModeService : Service() {
         nodeManager.initialize().onFailure {
             Log.w(TAG, "Node re-init failed: ${it.message}")
         }
+        startNetworkStatusPump()
         nodeManager.start(shouldAbort = { !_state.value.isRunning && !nodePausedForDoze }).onFailure {
             Log.w(TAG, "Node resume failed: ${it.message}")
             updateState {
@@ -609,7 +656,9 @@ class ProxyModeService : Service() {
         }
         nodeStarted = true
         nodePausedForDoze = false
-        updateState { copy(nodeLifecycle = NodeLifecycleStatus.ONLINE) }
+        updateState {
+            copy(nodeLifecycle = ztNodeStateToLifecycle(nodeManager.state.value, pausedDoze = false))
+        }
         for (network in pausedNetworks.toList()) {
             joinConfiguredNetwork(network, startToken = 0L)
         }
@@ -651,6 +700,7 @@ class ProxyModeService : Service() {
         private const val CHANNEL_ID = "zerotierb_proxy"
         private const val NOTIFICATION_ID = 5919814
         private const val JOIN_READY_TIMEOUT_MS = 30_000L
+        private const val NETWORK_STATUS_POLL_MS = 2_000L
         private const val HEALTH_MIN_BACKOFF_MS = 60_000L
         private const val HEALTH_MAX_BACKOFF_MS = 300_000L
         private const val TRAFFIC_HEARTBEAT_MS = 90_000L
@@ -665,21 +715,14 @@ class ProxyModeService : Service() {
         val state: StateFlow<ProxyServiceState> = _state.asStateFlow()
 
         private val startCounter = AtomicLong()
+        private val inFlightStarts = AtomicInteger(0)
 
         @Volatile
         private var stoppedToken = 0L
 
-        @Volatile
-        var startInFlight: Boolean = false
-            private set
-
-        fun markStartFinished() {
-            startInFlight = false
-        }
-
         /** True when a start was requested and no stop has superseded it yet. */
         val startRequested: Boolean
-            get() = startCounter.get() > stoppedToken || startInFlight
+            get() = startCounter.get() > stoppedToken || inFlightStarts.get() > 0
 
         private fun isStartSuperseded(token: Long): Boolean =
             token != 0L && token <= stoppedToken
@@ -688,17 +731,26 @@ class ProxyModeService : Service() {
             stoppedToken = startCounter.get()
         }
 
+        fun markStartFinished() {
+            inFlightStarts.updateAndGet { (it - 1).coerceAtLeast(0) }
+        }
+
         fun start(context: Context, forceDebug: Boolean = false, joinNetworkIds: List<String>? = null) {
             val alreadyRunning = state.value.isRunning
             val token = if (alreadyRunning) 0L else startCounter.incrementAndGet()
-            if (!alreadyRunning) startInFlight = true
+            if (!alreadyRunning) inFlightStarts.incrementAndGet()
             val intent = Intent(context, ProxyModeService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_FORCE_DEBUG, forceDebug)
                 putExtra(EXTRA_START_TOKEN, token)
                 joinNetworkIds?.let { putExtra(EXTRA_JOIN_NETWORK_IDS, it.toTypedArray()) }
             }
-            context.startForegroundService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                if (!alreadyRunning) markStartFinished()
+                throw e
+            }
         }
 
         fun stop(context: Context) {
@@ -710,10 +762,10 @@ class ProxyModeService : Service() {
         }
 
         suspend fun stopAndAwait(context: Context, timeoutMs: Long = 15_000): Boolean {
-            if (!state.value.isRunning && !startRequested && !startInFlight) return true
+            if (!state.value.isRunning && !startRequested) return true
             stop(context)
             val stopped = withTimeoutOrNull(timeoutMs) {
-                while (state.value.isRunning || startInFlight) {
+                while (state.value.isRunning || inFlightStarts.get() > 0) {
                     delay(50)
                 }
                 true

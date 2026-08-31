@@ -39,4 +39,40 @@ class ConnectionOrchestratorTest {
         val proxy = RuntimePlan(Runtime.PROXY, "r", null, listOf("n1"), false)
         assertNotEquals(off, proxy)
     }
+
+    @Test
+    fun proxyJoinSetRequiresRestart_table() {
+        assertEquals(
+            false,
+            ConnectionOrchestrator.proxyJoinSetRequiresRestart(
+                proxyRunning = false,
+                lastJoinNetworkIds = listOf("n1"),
+                nextJoinNetworkIds = listOf("n1", "n2"),
+            ),
+        )
+        assertEquals(
+            false,
+            ConnectionOrchestrator.proxyJoinSetRequiresRestart(
+                proxyRunning = true,
+                lastJoinNetworkIds = listOf("n1"),
+                nextJoinNetworkIds = listOf("n1"),
+            ),
+        )
+        assertEquals(
+            true,
+            ConnectionOrchestrator.proxyJoinSetRequiresRestart(
+                proxyRunning = true,
+                lastJoinNetworkIds = listOf("n1"),
+                nextJoinNetworkIds = listOf("n1", "n2"),
+            ),
+        )
+        assertEquals(
+            true,
+            ConnectionOrchestrator.proxyJoinSetRequiresRestart(
+                proxyRunning = true,
+                lastJoinNetworkIds = null,
+                nextJoinNetworkIds = listOf("n1"),
+            ),
+        )
+    }
 }

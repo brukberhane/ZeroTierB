@@ -48,7 +48,6 @@ class ZeroTierNodeManager(
     }
 
     suspend fun start(
-        timeoutMs: Long = 60_000,
         shouldAbort: () -> Boolean = { false },
     ): Result<Long> = withNode {
         runCatching {
@@ -62,25 +61,32 @@ class ZeroTierNodeManager(
             } else {
                 check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
             }
+            if (shouldAbort()) {
+                error("Node start aborted")
+            }
 
-            val online = withTimeoutOrNull(timeoutMs) {
-                while (!node.isOnline) {
-                    if (shouldAbort()) return@withTimeoutOrNull false
+            // zts_node_start returns before native `_node` exists. join() on a
+            // null Node SIGSEGVs in pthread_mutex_lock. Wait for NODE_UP
+            // (node.id != 0), not ONLINE (roots) — that can take >15s on cell.
+            val nodeId = withTimeoutOrNull(NODE_UP_TIMEOUT_MS) {
+                while (node.id == 0L) {
+                    if (shouldAbort()) return@withTimeoutOrNull 0L
                     ZeroTierNative.zts_util_delay(50)
                 }
-                true
-            } ?: false
-
-            check(online) {
+                node.id
+            } ?: 0L
+            check(nodeId != 0L) {
                 if (shouldAbort()) {
                     "Node start aborted"
                 } else {
-                    "Node did not come online within ${timeoutMs}ms"
+                    "Node did not come up within ${NODE_UP_TIMEOUT_MS}ms"
                 }
             }
 
-            val nodeId = node.id
-            _state.value = _state.value.copy(isOnline = true, nodeId = nodeId)
+            _state.value = _state.value.copy(
+                isOnline = node.isOnline,
+                nodeId = nodeId,
+            )
             nodeId
         }.onFailure { error ->
             Log.e(TAG, "start failed", error)
@@ -99,6 +105,7 @@ class ZeroTierNodeManager(
 
     suspend fun join(networkId: Long, config: ZerotierBNetwork? = null): Result<Unit> = withNode {
         runCatching {
+            check(node.id != 0L) { "Node not up — cannot join" }
             config?.let {
                 val settingsResult = ZtNetworkQuery.setNetworkSettings(
                     networkId,
@@ -209,36 +216,60 @@ class ZeroTierNodeManager(
 
     private val eventListener = ZeroTierEventListener { id, eventCode ->
         when (eventCode) {
+            ZeroTierNative.ZTS_EVENT_NODE_UP -> {
+                val nodeId = node.id
+                _state.value = _state.value.copy(nodeId = nodeId.takeIf { it != 0L } ?: _state.value.nodeId)
+                Log.i(TAG, "node UP id=${formatNodeId(nodeId)}")
+            }
             ZeroTierNative.ZTS_EVENT_NODE_ONLINE -> {
                 _state.value = _state.value.copy(isOnline = true, nodeId = node.id)
+                Log.i(TAG, "node ONLINE id=${formatNodeId(node.id)}")
             }
             ZeroTierNative.ZTS_EVENT_NODE_OFFLINE -> {
                 _state.value = _state.value.copy(isOnline = false)
+                Log.i(TAG, "node OFFLINE")
+            }
+            ZeroTierNative.ZTS_EVENT_NODE_DOWN -> {
+                _state.value = _state.value.copy(isOnline = false)
+                Log.i(TAG, "node DOWN")
             }
             ZeroTierNative.ZTS_EVENT_NODE_FATAL_ERROR -> {
                 _state.value = _state.value.copy(lastError = "Fatal node error")
+                Log.e(TAG, "node FATAL")
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_OK,
             ZeroTierNative.ZTS_EVENT_NETWORK_READY_IP4,
             ZeroTierNative.ZTS_EVENT_NETWORK_READY_IP6,
+            ZeroTierNative.ZTS_EVENT_NETWORK_READY_IP4_IP6,
             ZeroTierNative.ZTS_EVENT_NETWORK_UPDATE,
             ZeroTierNative.ZTS_EVENT_ROUTE_ADDED,
             ZeroTierNative.ZTS_EVENT_ROUTE_REMOVED,
             ZeroTierNative.ZTS_EVENT_ADDR_ADDED_IP4,
             ZeroTierNative.ZTS_EVENT_ADDR_ADDED_IP6,
+            ZeroTierNative.ZTS_EVENT_ADDR_REMOVED_IP4,
+            ZeroTierNative.ZTS_EVENT_ADDR_REMOVED_IP6,
             -> {
+                Log.i(TAG, "net event=$eventCode id=${formatNodeId(id)}")
                 refreshNetworkInfoAsync(id)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_REQ_CONFIG -> {
+                Log.i(TAG, "net REQ_CONFIG ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.REQUESTING_CONFIG)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_ACCESS_DENIED -> {
+                Log.i(TAG, "net ACCESS_DENIED ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.ACCESS_DENIED)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_NOT_FOUND -> {
+                Log.i(TAG, "net NOT_FOUND ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.NOT_FOUND)
             }
+            ZeroTierNative.ZTS_EVENT_NETWORK_CLIENT_TOO_OLD -> {
+                Log.i(TAG, "net CLIENT_TOO_OLD ${formatNodeId(id)}")
+                updateNetworkStatus(id, ZtNetworkStatus.Status.CLIENT_TOO_OLD)
+            }
             ZeroTierNative.ZTS_EVENT_NETWORK_DOWN -> {
+                Log.i(TAG, "net DOWN ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.DOWN)
             }
             ZeroTierNative.ZTS_EVENT_PEER_DIRECT,
@@ -284,6 +315,7 @@ class ZeroTierNodeManager(
 
     companion object {
         private const val TAG = "ZeroTierNodeManager"
+        private const val NODE_UP_TIMEOUT_MS = 10_000L
 
         fun formatNodeId(nodeId: Long): String = String.format("%010x", nodeId)
     }

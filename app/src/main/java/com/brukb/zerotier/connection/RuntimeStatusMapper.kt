@@ -4,6 +4,7 @@ import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.ProxyServiceState
 import com.brukb.zerotier.vpn.VpnServiceState
 import com.brukb.zerotier.ztlib.ZtNetworkStatus
+import com.brukb.zerotier.ztlib.ZtNodeState
 import com.zerotier.sdk.VirtualNetworkStatus
 import com.zerotier.sdk.util.StringUtils
 
@@ -68,4 +69,15 @@ fun resolveNodeLifecycle(
     Runtime.PROXY -> proxy.nodeLifecycle
     Runtime.VPN -> vpn.nodeLifecycle
     Runtime.OFF, null -> NodeLifecycleStatus.STOPPED
+}
+
+/** Map libzt node snapshot onto the same lifecycle enum VPN uses. */
+fun ztNodeStateToLifecycle(
+    nodeState: ZtNodeState,
+    pausedDoze: Boolean,
+): NodeLifecycleStatus {
+    if (pausedDoze) return NodeLifecycleStatus.PAUSED_DOZE
+    if (!nodeState.lastError.isNullOrBlank()) return NodeLifecycleStatus.ERROR
+    if (nodeState.isOnline) return NodeLifecycleStatus.ONLINE
+    return NodeLifecycleStatus.STARTING
 }

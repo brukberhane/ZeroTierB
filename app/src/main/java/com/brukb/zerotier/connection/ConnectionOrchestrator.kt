@@ -156,6 +156,12 @@ class ConnectionOrchestrator(
     private suspend fun applyProxy(plan: RuntimePlan) {
         stopVpnStack()
         awaitUdpPortReleased(VPN_UDP_PORT)
+        val proxyRunning = ProxyModeService.state.value.isRunning
+        if (proxyJoinSetRequiresRestart(proxyRunning, lastApplied?.joinNetworkIds, plan.joinNetworkIds)) {
+            Log.i(TAG, "proxy join set changed — restarting")
+            stopProxyStack()
+            awaitUdpPortReleased(LIBZT_UDP_PORT)
+        }
         if (!ProxyModeService.state.value.isRunning) {
             ProxyModeService.start(context, joinNetworkIds = plan.joinNetworkIds)
             if (!awaitProxyStarted()) {
@@ -259,5 +265,16 @@ class ConnectionOrchestrator(
         private const val TAG = "ConnectionOrchestrator"
         private const val LIBZT_UDP_PORT = 9993
         private const val VPN_UDP_PORT = 9994
+
+        /**
+         * PROXY joins every enabled net. A live proxy with a different join
+         * set must restart (same pattern as VPN main-net change). `lastJoin`
+         * null (stale lastApplied) also restarts so grant/self-heal re-applies.
+         */
+        fun proxyJoinSetRequiresRestart(
+            proxyRunning: Boolean,
+            lastJoinNetworkIds: List<String>?,
+            nextJoinNetworkIds: List<String>,
+        ): Boolean = proxyRunning && lastJoinNetworkIds != nextJoinNetworkIds
     }
 }

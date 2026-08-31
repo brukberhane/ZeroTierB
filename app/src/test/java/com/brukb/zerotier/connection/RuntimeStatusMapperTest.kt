@@ -3,6 +3,7 @@ package com.brukb.zerotier.connection
 import com.brukb.zerotier.proxy.ProxyServiceState
 import com.brukb.zerotier.vpn.VpnServiceState
 import com.brukb.zerotier.ztlib.ZtNetworkStatus
+import com.brukb.zerotier.ztlib.ZtNodeState
 import com.zerotier.sdk.VirtualNetworkStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -89,6 +90,26 @@ class RuntimeStatusMapperTest {
         assertEquals(
             NodeLifecycleStatus.STOPPED,
             resolveNodeLifecycle(Runtime.OFF, proxy, VpnServiceState()),
+        )
+    }
+
+    @Test
+    fun ztNodeStateToLifecycle_table() {
+        assertEquals(
+            NodeLifecycleStatus.PAUSED_DOZE,
+            ztNodeStateToLifecycle(ZtNodeState(isOnline = true), pausedDoze = true),
+        )
+        assertEquals(
+            NodeLifecycleStatus.ERROR,
+            ztNodeStateToLifecycle(ZtNodeState(lastError = "Fatal node error"), pausedDoze = false),
+        )
+        assertEquals(
+            NodeLifecycleStatus.ONLINE,
+            ztNodeStateToLifecycle(ZtNodeState(isOnline = true, nodeId = 1L), pausedDoze = false),
+        )
+        assertEquals(
+            NodeLifecycleStatus.STARTING,
+            ztNodeStateToLifecycle(ZtNodeState(isOnline = false, nodeId = 1L), pausedDoze = false),
         )
     }
 }

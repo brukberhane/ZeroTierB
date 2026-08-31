@@ -40,7 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -56,6 +56,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class ZerotierBVpnService :
@@ -115,87 +116,92 @@ class ZerotierBVpnService :
 
         startForegroundCompat(buildNotification("Starting VPN"))
         updateState { copy(nodeLifecycle = NodeLifecycleStatus.STARTING) }
-        synchronized(this) {
-            if (node != null) {
-                refreshJoinedNetworks()
-                return START_STICKY
-            }
-            val startToken = intent?.getLongExtra(EXTRA_START_TOKEN, 0L) ?: 0L
-            if (isStartSuperseded(startToken)) {
-                Log.i(TAG, "Start superseded by stop — not starting node")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
-            try {
-                val socket = DatagramSocket(null).apply {
-                    reuseAddress = true
-                    soTimeout = 1000
-                    bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), 9994))
+        val startToken = intent?.getLongExtra(EXTRA_START_TOKEN, 0L) ?: 0L
+        val claimedInFlight = startToken != 0L
+        try {
+            synchronized(this) {
+                if (node != null) {
+                    refreshJoinedNetworks()
+                    return START_STICKY
                 }
-                Log.i(TAG, "UDP bound localPort=${socket.localPort} ipv4=0.0.0.0")
-                if (!protect(socket)) {
-                    markStopped()
-                    updateState {
-                        copy(
-                            statusMessage = "Failed to protect UDP socket",
-                            nodeLifecycle = NodeLifecycleStatus.ERROR,
-                        )
-                    }
+                if (isStartSuperseded(startToken)) {
+                    Log.i(TAG, "Start superseded by stop — not starting node")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf(startId)
                     return START_NOT_STICKY
                 }
-                datagramSocket = socket
-                val ztNode = Node(System.currentTimeMillis())
-                val scheduler = PacketScheduler(this)
-                packetScheduler = scheduler
-                val adapter = TunTapAdapter(this, scheduler)
-                tunTapAdapter = adapter
-                val udp = UdpCom(scheduler, socket)
-                udpCom = udp
-                val initResult = ztNode.init(
-                    dataStore,
-                    dataStore,
-                    this,
-                    this,
-                    adapter,
-                    this,
-                    null,
-                )
-                if (initResult != ResultCode.RESULT_OK) {
+                try {
+                    val socket = DatagramSocket(null).apply {
+                        reuseAddress = true
+                        soTimeout = 1000
+                        bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), 9994))
+                    }
+                    Log.i(TAG, "UDP bound localPort=${socket.localPort} ipv4=0.0.0.0")
+                    if (!protect(socket)) {
+                        markStopped()
+                        updateState {
+                            copy(
+                                statusMessage = "Failed to protect UDP socket",
+                                nodeLifecycle = NodeLifecycleStatus.ERROR,
+                            )
+                        }
+                        stopSelf(startId)
+                        return START_NOT_STICKY
+                    }
+                    datagramSocket = socket
+                    val ztNode = Node(System.currentTimeMillis())
+                    val scheduler = PacketScheduler(this)
+                    packetScheduler = scheduler
+                    val adapter = TunTapAdapter(this, scheduler)
+                    tunTapAdapter = adapter
+                    val udp = UdpCom(scheduler, socket)
+                    udpCom = udp
+                    val initResult = ztNode.init(
+                        dataStore,
+                        dataStore,
+                        this,
+                        this,
+                        adapter,
+                        this,
+                        null,
+                    )
+                    if (initResult != ResultCode.RESULT_OK) {
+                        updateState {
+                            copy(
+                                statusMessage = "Node init failed: $initResult",
+                                nodeLifecycle = NodeLifecycleStatus.ERROR,
+                            )
+                        }
+                        shutdown()
+                        return START_NOT_STICKY
+                    }
+                    node = ztNode
+                    scheduler.start()
+                    vpnThread = Thread(this, "ZeroTier Service Thread").also { it.start() }
                     updateState {
                         copy(
-                            statusMessage = "Node init failed: $initResult",
+                            isRunning = true,
+                            nodeId = StringUtils.addressToString(ztNode.address()),
+                            statusMessage = "Waiting for roots",
+                            nodeLifecycle = NodeLifecycleStatus.STARTING,
+                        )
+                    }
+                    udpThread = Thread(udp, "UDP Listen Thread").also { it.start() }
+                    refreshJoinedNetworks()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Start failed", e)
+                    updateState {
+                        copy(
+                            statusMessage = e.message ?: "Start failed",
                             nodeLifecycle = NodeLifecycleStatus.ERROR,
                         )
                     }
                     shutdown()
                     return START_NOT_STICKY
                 }
-                node = ztNode
-                scheduler.start()
-                vpnThread = Thread(this, "ZeroTier Service Thread").also { it.start() }
-                updateState {
-                    copy(
-                        isRunning = true,
-                        nodeId = StringUtils.addressToString(ztNode.address()),
-                        statusMessage = "Waiting for roots",
-                        nodeLifecycle = NodeLifecycleStatus.STARTING,
-                    )
-                }
-                udpThread = Thread(udp, "UDP Listen Thread").also { it.start() }
-                refreshJoinedNetworks()
-            } catch (e: Exception) {
-                Log.e(TAG, "Start failed", e)
-                updateState {
-                    copy(
-                        statusMessage = e.message ?: "Start failed",
-                        nodeLifecycle = NodeLifecycleStatus.ERROR,
-                    )
-                }
-                shutdown()
-                return START_NOT_STICKY
             }
+        } finally {
+            if (claimedInFlight) markStartFinished()
         }
         return START_STICKY
     }
@@ -848,13 +854,14 @@ class ZerotierBVpnService :
             private set
 
         private val startCounter = AtomicLong()
+        private val inFlightStarts = AtomicInteger(0)
 
         @Volatile
         private var stoppedToken = 0L
 
         /** True when a start was requested and no stop has superseded it yet. */
         val startRequested: Boolean
-            get() = startCounter.get() > stoppedToken
+            get() = startCounter.get() > stoppedToken || inFlightStarts.get() > 0
 
         private fun isStartSuperseded(token: Long): Boolean =
             token != 0L && token <= stoppedToken
@@ -863,13 +870,23 @@ class ZerotierBVpnService :
             stoppedToken = startCounter.get()
         }
 
+        private fun markStartFinished() {
+            inFlightStarts.updateAndGet { (it - 1).coerceAtLeast(0) }
+        }
+
         fun start(context: Context, singleNetworkId: String? = null) {
             val token = startCounter.incrementAndGet()
+            inFlightStarts.incrementAndGet()
             val intent = Intent(context, ZerotierBVpnService::class.java).apply {
                 putExtra(EXTRA_START_TOKEN, token)
                 singleNetworkId?.let { putExtra(EXTRA_SINGLE_NETWORK_ID, it) }
             }
-            context.startForegroundService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                markStartFinished()
+                throw e
+            }
         }
 
         fun stop(context: Context) {
@@ -884,7 +901,10 @@ class ZerotierBVpnService :
             if (!state.value.isRunning && !startRequested) return true
             stop(context)
             val stopped = withTimeoutOrNull(timeoutMs) {
-                state.first { !it.isRunning && !startRequested }
+                while (state.value.isRunning || inFlightStarts.get() > 0) {
+                    delay(50)
+                }
+                true
             }
             if (stopped == null) {
                 Log.w(TAG, "VPN stop timed out after ${timeoutMs}ms")
