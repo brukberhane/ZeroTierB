@@ -60,3 +60,11 @@ Does **not** cover: orchestrator internals.
 | material3 1.5.0-alpha needs AGP 9 / compileSdk 37 | BOM bump on pinned AGP 8.7 | Stay on `compose-bom:2024.12.01`; use stable `SegmentedButton` + `CircularProgressIndicator` |
 
 <!-- last-verified: 2026-08 -->
+
+### `Proxy network row shows em-dash`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Network row `Status: —` while PROXY is up and joined | ViewModel reads only the VPN stack's per-network list; proxy join state lived only inside the libzt node manager | Both runtimes publish `NetworkRuntimeStatus` on their `StateFlow`; ViewModel resolves via `plan.runtime` + `resolveNetworkRuntime` — never hard-wire VPN-only |
+
+<!-- last-verified: 2026-08 -->

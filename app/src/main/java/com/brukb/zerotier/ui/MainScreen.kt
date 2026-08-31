@@ -177,7 +177,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     items(uiState.networks, key = { it.networkId }) { network ->
                         NetworkRow(
                             network = network,
-                            runtimeStatus = viewModel.runtimeStatus(network.networkId, uiState.vpn),
+                            runtimeStatus = viewModel.runtimeStatus(network.networkId),
                             onOpen = { viewModel.openNetworkDetail(network) },
                             onToggle = { viewModel.toggleNetworkEnabled(network, it) },
                             onDelete = { viewModel.deleteNetwork(network.networkId) },

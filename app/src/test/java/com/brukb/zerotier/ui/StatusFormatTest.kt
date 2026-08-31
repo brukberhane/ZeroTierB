@@ -1,9 +1,12 @@
 package com.brukb.zerotier.ui
 
+import com.brukb.zerotier.connection.JoinStatus
+import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.PhysicalLink
 import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.proxy.ProxyServiceState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -61,5 +64,35 @@ class StatusFormatTest {
             ),
         )
         assertNull(proxyStatusText(ProxyServiceState()))
+    }
+
+    @Test
+    fun joinStatusLabel_allValuesNonEmpty() {
+        JoinStatus.entries.forEach { status ->
+            assert(joinStatusLabel(status).isNotBlank())
+        }
+    }
+
+    @Test
+    fun nodeLifecycleLabel_allValuesNonEmpty() {
+        NodeLifecycleStatus.entries.forEach { status ->
+            assert(nodeLifecycleLabel(status).isNotBlank())
+        }
+    }
+
+    @Test
+    fun nodeLifecycleLabel_pausedDozeDiffersFromStopped() {
+        assertNotEquals(
+            nodeLifecycleLabel(NodeLifecycleStatus.STOPPED),
+            nodeLifecycleLabel(NodeLifecycleStatus.PAUSED_DOZE),
+        )
+    }
+
+    @Test
+    fun joinStatusChipRole_okDiffersFromJoining() {
+        assertNotEquals(
+            joinStatusChipRole(JoinStatus.OK),
+            joinStatusChipRole(JoinStatus.JOINING),
+        )
     }
 }

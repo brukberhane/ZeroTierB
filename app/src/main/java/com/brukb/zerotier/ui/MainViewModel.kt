@@ -6,7 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.connection.OrchestratorState
 import com.brukb.zerotier.connection.PhysicalLink
+import com.brukb.zerotier.connection.Runtime
 import com.brukb.zerotier.connection.RuntimePlan
+import com.brukb.zerotier.connection.NetworkRuntimeStatus
+import com.brukb.zerotier.connection.NodeLifecycleStatus
+import com.brukb.zerotier.connection.resolveNetworkRuntime
+import com.brukb.zerotier.connection.resolveNodeLifecycle
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.LinkKind
@@ -273,11 +278,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun runtimeStatus(networkId: String, state: VpnServiceState): String {
-        val normalized = ZerotierBNetwork.normalizeNetworkId(networkId)
-        return state.networkStatuses.firstOrNull {
-            ZerotierBNetwork.normalizeNetworkId(it.networkId) == normalized
-        }?.status ?: "—"
+    fun activeRuntime(): Runtime? = uiState.value.plan?.runtime
+
+    fun nodeLifecycle(): NodeLifecycleStatus =
+        resolveNodeLifecycle(uiState.value.plan?.runtime, uiState.value.proxy, uiState.value.vpn)
+
+    fun networkRuntime(networkId: String): NetworkRuntimeStatus? =
+        resolveNetworkRuntime(
+            uiState.value.plan?.runtime,
+            uiState.value.proxy,
+            uiState.value.vpn,
+            networkId,
+        )
+
+    fun nodeId(): String? = when (uiState.value.plan?.runtime) {
+        Runtime.PROXY -> uiState.value.proxy.nodeId
+        Runtime.VPN -> uiState.value.vpn.nodeId.takeIf { it.isNotBlank() }
+        else -> null
+    }
+
+    fun runtimeStatus(networkId: String): String {
+        val runtime = networkRuntime(networkId) ?: return "—"
+        return joinStatusLabel(runtime.joinStatus)
     }
 
     fun overlapWarning(state: VpnServiceState): String? {

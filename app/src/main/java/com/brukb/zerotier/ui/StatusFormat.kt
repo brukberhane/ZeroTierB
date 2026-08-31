@@ -1,7 +1,15 @@
 package com.brukb.zerotier.ui
 
+import com.brukb.zerotier.connection.JoinStatus
+import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.PhysicalLink
 import com.brukb.zerotier.proxy.ProxyServiceState
+
+enum class JoinStatusChipRole {
+    NEUTRAL,
+    SUCCESS,
+    ERROR,
+}
 
 fun canSaveSsid(link: PhysicalLink?): Boolean = link is PhysicalLink.WifiUnsaved
 
@@ -15,6 +23,38 @@ fun formatLinkLine(link: PhysicalLink?): String = when (link) {
     is PhysicalLink.Mobile -> "SIM ${link.subscriptionId} (${link.mode.name})"
     is PhysicalLink.Other -> "Other (${link.mode.name})"
     PhysicalLink.None, null -> "No link"
+}
+
+fun joinStatusLabel(status: JoinStatus): String = when (status) {
+    JoinStatus.JOINING -> "Joining"
+    JoinStatus.REQUESTING_CONFIG -> "Requesting config"
+    JoinStatus.OK -> "Connected"
+    JoinStatus.ACCESS_DENIED -> "Access denied"
+    JoinStatus.NOT_FOUND -> "Not found"
+    JoinStatus.DOWN -> "Down"
+    JoinStatus.UNKNOWN -> "Unknown"
+    JoinStatus.ERROR -> "Error"
+}
+
+fun nodeLifecycleLabel(status: NodeLifecycleStatus): String = when (status) {
+    NodeLifecycleStatus.STOPPED -> "Stopped"
+    NodeLifecycleStatus.STARTING -> "Starting"
+    NodeLifecycleStatus.ONLINE -> "Online"
+    NodeLifecycleStatus.PAUSED_DOZE -> "Paused (Doze)"
+    NodeLifecycleStatus.ERROR -> "Error"
+}
+
+fun joinStatusChipRole(status: JoinStatus): JoinStatusChipRole = when (status) {
+    JoinStatus.OK -> JoinStatusChipRole.SUCCESS
+    JoinStatus.JOINING,
+    JoinStatus.REQUESTING_CONFIG,
+    -> JoinStatusChipRole.NEUTRAL
+    JoinStatus.ACCESS_DENIED,
+    JoinStatus.NOT_FOUND,
+    JoinStatus.DOWN,
+    JoinStatus.UNKNOWN,
+    JoinStatus.ERROR,
+    -> JoinStatusChipRole.ERROR
 }
 
 fun proxyStatusText(proxy: ProxyServiceState): String? {

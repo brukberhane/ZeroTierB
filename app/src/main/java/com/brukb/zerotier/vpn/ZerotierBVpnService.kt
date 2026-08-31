@@ -16,6 +16,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.connection.NodeLifecycleStatus
+import com.brukb.zerotier.connection.NetworkRuntimeStatus
+import com.brukb.zerotier.connection.vpnVirtualStatusToJoinStatus
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.ui.MainActivity
 import com.brukb.zerotier.vpn.scheduling.PacketScheduler
@@ -109,6 +112,7 @@ class ZerotierBVpnService :
         intent?.getStringExtra(EXTRA_SINGLE_NETWORK_ID)?.let { allowedVpnNetworkId = it }
 
         startForegroundCompat(buildNotification("Starting VPN"))
+        updateState { copy(nodeLifecycle = NodeLifecycleStatus.STARTING) }
         synchronized(this) {
             if (node != null) {
                 refreshJoinedNetworks()
@@ -129,7 +133,12 @@ class ZerotierBVpnService :
                 }
                 if (!protect(socket)) {
                     markStopped()
-                    updateState { copy(statusMessage = "Failed to protect UDP socket") }
+                    updateState {
+                        copy(
+                            statusMessage = "Failed to protect UDP socket",
+                            nodeLifecycle = NodeLifecycleStatus.ERROR,
+                        )
+                    }
                     stopSelf(startId)
                     return START_NOT_STICKY
                 }
@@ -151,7 +160,12 @@ class ZerotierBVpnService :
                     null,
                 )
                 if (initResult != ResultCode.RESULT_OK) {
-                    updateState { copy(statusMessage = "Node init failed: $initResult") }
+                    updateState {
+                        copy(
+                            statusMessage = "Node init failed: $initResult",
+                            nodeLifecycle = NodeLifecycleStatus.ERROR,
+                        )
+                    }
                     shutdown()
                     return START_NOT_STICKY
                 }
@@ -163,13 +177,19 @@ class ZerotierBVpnService :
                         isRunning = true,
                         nodeId = StringUtils.addressToString(ztNode.address()),
                         statusMessage = "Node online",
+                        nodeLifecycle = NodeLifecycleStatus.ONLINE,
                     )
                 }
                 udpThread = Thread(udp, "UDP Listen Thread").also { it.start() }
                 refreshJoinedNetworks()
             } catch (e: Exception) {
                 Log.e(TAG, "Start failed", e)
-                updateState { copy(statusMessage = e.message ?: "Start failed") }
+                updateState {
+                    copy(
+                        statusMessage = e.message ?: "Start failed",
+                        nodeLifecycle = NodeLifecycleStatus.ERROR,
+                    )
+                }
                 shutdown()
                 return START_NOT_STICKY
             }
@@ -710,21 +730,10 @@ class ZerotierBVpnService :
         val statuses = virtualNetworkConfigs.map { (id, config) ->
             NetworkRuntimeStatus(
                 networkId = StringUtils.networkIdToString(id),
-                status = formatNetworkStatus(config.status),
+                joinStatus = vpnVirtualStatusToJoinStatus(config.status),
             )
         }
         updateState { copy(networkStatuses = statuses) }
-    }
-
-    private fun formatNetworkStatus(status: VirtualNetworkStatus): String = when (status) {
-        VirtualNetworkStatus.NETWORK_STATUS_REQUESTING_CONFIGURATION -> "Requesting config"
-        VirtualNetworkStatus.NETWORK_STATUS_OK -> "Connected"
-        VirtualNetworkStatus.NETWORK_STATUS_ACCESS_DENIED -> "Access denied"
-        VirtualNetworkStatus.NETWORK_STATUS_NOT_FOUND -> "Not found"
-        VirtualNetworkStatus.NETWORK_STATUS_PORT_ERROR -> "Port error"
-        VirtualNetworkStatus.NETWORK_STATUS_CLIENT_TOO_OLD -> "Client too old"
-        VirtualNetworkStatus.NETWORK_STATUS_AUTHENTICATION_REQUIRED -> "Auth required"
-        else -> status.toString()
     }
 
     private fun updateState(block: VpnServiceState.() -> VpnServiceState) {

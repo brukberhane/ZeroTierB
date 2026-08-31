@@ -16,8 +16,13 @@
 | T06 | [System HTTP_PROXY + Shizuku grant](./T06-system-proxy-shizuku.md) | ✅ | T05 | T07 | L5 | |
 | T07 | [VPN single-net + exclusive stack swap](./T07-vpn-single-net-swap.md) | ✅ | T06 | T08 | L6 | |
 | T08 | [AUTO physical-link observer](./T08-auto-link-observer.md) | ✅ | T07 | T09 | L6 | |
-| T09 | [UI: global mode, Links, pin Main](./T09-ui-global-links-pin.md) | ✅ | T08 | T10 | L7 | |
-| T10 | [E2E / CoS proof](./T10-e2e-cos-proof.md) | Pending | T09 | — | L8 | |
+| T09 | [UI: global mode, Links, pin Main](./T09-ui-global-links-pin.md) | ✅ | T08 | T11 | L7 | |
+| T11 | [Proxy/VPN unified runtime state](./T11-proxy-vpn-unified-runtime-state.md) | ✅ | T09 | T12 | L7 | UI rewrite phase A — data layer |
+| T12 | [Runtime hero card + status chips](./T12-runtime-hero-card-status-chips.md) | Pending | T11 | T13 | L7 | UI rewrite phase B — hero + chips |
+| T13 | [Settings bottom sheet sections](./T13-settings-bottom-sheet-sections.md) | Pending | T12 | T14 | L7 | UI rewrite phase C — settings UX |
+| T14 | [Network detail live runtime](./T14-network-detail-live-runtime.md) | Pending | T13 | T15 | L7 | UI rewrite phase D — routes/DNS |
+| T15 | [UI polish: motion, empty states, copy](./T15-ui-polish-motion-empty-states.md) | Pending | T14 | T10 | L7 | UI rewrite phase E — polish |
+| T10 | [E2E / CoS proof](./T10-e2e-cos-proof.md) | Pending | T15 | — | L8 | Run after UI rewrite A–E |
 
 ## Layer legend
 

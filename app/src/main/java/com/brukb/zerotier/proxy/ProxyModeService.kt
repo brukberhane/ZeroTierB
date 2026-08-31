@@ -15,6 +15,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
+import com.brukb.zerotier.connection.NodeLifecycleStatus
+import com.brukb.zerotier.connection.ztNetworkToRuntime
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.dns.DnsResolver
 import com.brukb.zerotier.proxy.http.HttpProxyServer
@@ -24,6 +26,7 @@ import com.brukb.zerotier.ui.MainActivity
 import com.brukb.zerotier.vpn.ZerotierBVpnService
 import com.brukb.zerotier.ztlib.ZeroTierNodeManager
 import com.brukb.zerotier.ztlib.ZtNetworkStatus
+import com.brukb.zerotier.ztlib.ZtNodeState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -99,7 +102,14 @@ class ProxyModeService : Service() {
                 if (_state.value.isRunning) {
                     scope.launch { resumeFromIdleIfNeeded() }
                 } else {
-                    updateState { copy(isRunning = true, statusMessage = "Starting proxy...") }
+                    updateState {
+                        copy(
+                            isRunning = true,
+                            statusMessage = "Starting proxy...",
+                            nodeLifecycle = NodeLifecycleStatus.STARTING,
+                            networkStatuses = emptyList(),
+                        )
+                    }
                     scope.launch {
                         startStopMutex.withLock {
                             startProxy(
@@ -156,7 +166,7 @@ class ProxyModeService : Service() {
     private suspend fun startProxy(forceDebug: Boolean, joinNetworkIds: List<String>? = null, startToken: Long = 0L) {
         if (isStartSuperseded(startToken)) {
             Log.i(TAG, "Start superseded by stop — not starting proxy")
-            updateState { copy(isRunning = false, statusMessage = "Stopped") }
+            updateState { copy(isRunning = false, statusMessage = "Stopped", nodeLifecycle = NodeLifecycleStatus.STOPPED) }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
@@ -168,6 +178,7 @@ class ProxyModeService : Service() {
                     isRunning = false,
                     lastError = "VPN active — stop VPN before proxy",
                     statusMessage = "Refused: VPN active",
+                    nodeLifecycle = NodeLifecycleStatus.STOPPED,
                 )
             }
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -201,8 +212,10 @@ class ProxyModeService : Service() {
             copy(
                 nodeId = nodeId,
                 statusMessage = "Node online: $nodeId",
+                nodeLifecycle = NodeLifecycleStatus.ONLINE,
             )
         }
+        publishNetworkStatusesFromNode(nodeManager.state.value)
         Log.i(TAG, "Node online: $nodeId")
 
         networkConfigs.clear()
@@ -223,6 +236,7 @@ class ProxyModeService : Service() {
 
         networkStateJob = scope.launch {
             nodeManager.state.collect { nodeState ->
+                publishNetworkStatusesFromNode(nodeState)
                 for ((networkId, status) in nodeState.networks) {
                     val config = networkConfigs[networkId] ?: continue
                     if (status.status == ZtNetworkStatus.Status.OK) {
@@ -286,6 +300,11 @@ class ProxyModeService : Service() {
         Log.i(TAG, "Joined ${network.networkId}")
     }
 
+    private fun publishNetworkStatusesFromNode(nodeState: ZtNodeState) {
+        val statuses = nodeState.networks.map { (id, zt) -> ztNetworkToRuntime(id, zt) }
+        updateState { copy(networkStatuses = statuses) }
+    }
+
     private fun applyNetworkRuntime(network: ZerotierBNetwork, status: ZtNetworkStatus) {
         Log.i(
             TAG,
@@ -335,6 +354,8 @@ class ProxyModeService : Service() {
                 lastError = message,
                 statusMessage = message,
                 isRunning = false,
+                nodeLifecycle = NodeLifecycleStatus.ERROR,
+                networkStatuses = emptyList(),
             )
         }
         scope.launch { startStopMutex.withLock { stopProxy() } }
@@ -529,7 +550,13 @@ class ProxyModeService : Service() {
         nodeManager.stop()
         nodeStarted = false
         nodePausedForDoze = true
-        updateState { copy(statusMessage = "ZeroTier paused (Doze)") }
+        updateState {
+            copy(
+                statusMessage = "ZeroTier paused (Doze)",
+                nodeLifecycle = NodeLifecycleStatus.PAUSED_DOZE,
+                networkStatuses = emptyList(),
+            )
+        }
     }
 
     private suspend fun resumeNodeFromDoze() {
@@ -540,11 +567,17 @@ class ProxyModeService : Service() {
         }
         nodeManager.start().onFailure {
             Log.w(TAG, "Node resume failed: ${it.message}")
-            updateState { copy(statusMessage = "ZeroTier paused (Doze) — resume failed") }
+            updateState {
+                copy(
+                    statusMessage = "ZeroTier paused (Doze) — resume failed",
+                    nodeLifecycle = NodeLifecycleStatus.PAUSED_DOZE,
+                )
+            }
             return
         }
         nodeStarted = true
         nodePausedForDoze = false
+        updateState { copy(nodeLifecycle = NodeLifecycleStatus.ONLINE) }
         for (network in pausedNetworks.toList()) {
             joinConfiguredNetwork(network, startToken = 0L)
         }
