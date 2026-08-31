@@ -38,6 +38,13 @@
     <string name="join_network">Join network</string>
     <string name="network_id_label">Network ID (16 hex)</string>
     <string name="network_name_label">Name (optional)</string>
+    <string name="detail_runtime_section">Live runtime</string>
+    <string name="detail_addresses">Assigned addresses</string>
+    <string name="detail_routes">Managed routes</string>
+    <string name="detail_dns">DNS servers</string>
+    <string name="detail_none">None</string>
+    <string name="detail_not_connected">Not connected — enable network and start PROXY or VPN</string>
+    <string name="detail_vpn_main_only">VPN joins the Main network only. Pin this network Main, or switch to PROXY.</string>
     <string name="add">Add</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>

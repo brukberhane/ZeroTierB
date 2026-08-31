@@ -36,3 +36,11 @@ Does **not** cover: libzt (`ZeroTierSocket`) — that is `libzt.mdc`.
 | Non-main net still OK after VPN swap | Membership file left in `networks.d` | Explicit `leave()` + omit from rebuild |
 
 <!-- last-verified: 2026-08 -->
+
+### `VirtualNetworkConfig address port is prefix length`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Assigned address shows `/0` or garbage CIDR; route target parsing fails | JNI `VirtualNetworkConfig` encodes CIDR prefix in `InetSocketAddress.port`, not a TCP port | Format as `"${address.hostAddress}/${socketAddress.port}"`; use `InetAddressUtils.addressToRoute(addr, port)` for route targets |
+
+<!-- last-verified: 2026-08-31 -->

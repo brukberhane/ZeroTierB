@@ -120,3 +120,10 @@ make verify
 
 - Settings sheet (`SettingsBottomSheet`) shipped with read-only package/node ID in Advanced — T15 adds clipboard + snackbar there and on hero.
 - `rememberModalBottomSheetState` deprecation — optional migrate to `rememberBottomSheetState` during T15 layout pass.
+
+### From T14 close-out
+
+- `NetworkDetailScreen` is `AlertDialog` + `verticalScroll` with live runtime sections (addresses, routes, DNS) and `JoinStatusChip` in header.
+- Network ID shown monospace in header — T15 adds copy + snackbar (same pattern as hero node ID).
+- Runtime empty states: `detail_not_connected`, `detail_vpn_main_only`; route list uses `filterDisplayRoutes` with Room `allow*` flags (preview before Save).
+- T15 spacing polish: align detail section rhythm (8/16 dp) with hero/settings; no sheet conversion for detail unless planned explicitly.

@@ -109,3 +109,27 @@ Does **not** cover: orchestrator internals.
 | Links overlay opens from settings but SSID rows empty / no location prompt | Shortcut called `setShowLinks(true)` without permission launcher | Mirror Wi-Fi toolbar: `requestLinkPermissions` then `setShowLinks(true)`; dismiss sheet first |
 
 <!-- last-verified: 2026-08-31 -->
+
+### `Network detail shows no routes while joined`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| PROXY detail lists addresses/routes/DNS; VPN detail shows join chip only | VPN runtime publish emitted join status but not list fields from in-memory config | Publish controller truth (addresses, routes, DNS) from active stack config; UI filters with Room `allow*` flags via `filterDisplayRoutes` |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `Detail shows stale other-stack data`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| VPN up, viewing non-main net — detail shows PROXY routes or wrong net | UI read the inactive stack map or invented fallback | `resolveNetworkRuntime(plan.runtime, …)` only; null under VPN for non-main → honest copy, not cross-stack fallback |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `Network detail clipped on long route lists`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Runtime sections truncated; no scroll in detail dialog | `AlertDialog` body not scrollable | `Column(Modifier.verticalScroll(rememberScrollState()))` in dialog `text` — no nested `LazyColumn` |
+
+<!-- last-verified: 2026-08-31 -->

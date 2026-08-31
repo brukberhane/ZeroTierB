@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -17,12 +20,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.brukb.zerotier.R
+import com.brukb.zerotier.connection.JoinStatus
+import com.brukb.zerotier.connection.NetworkRuntimeStatus
+import com.brukb.zerotier.connection.Runtime
+import com.brukb.zerotier.connection.filterDisplayRoutes
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 
 @Composable
 fun NetworkDetailScreen(
     network: ZerotierBNetwork,
+    joinStatus: JoinStatus?,
+    runtimeStatus: NetworkRuntimeStatus?,
+    activeRuntime: Runtime?,
     onDismiss: () -> Unit,
     onSave: (ZerotierBNetwork) -> Unit,
 ) {
@@ -32,7 +45,23 @@ fun NetworkDetailScreen(
         onDismissRequest = onDismiss,
         title = { Text("Network settings") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    network.networkId,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+                joinStatus?.let { JoinStatusChip(it) }
+
+                RuntimeSection(
+                    network = edited,
+                    runtimeStatus = runtimeStatus,
+                    activeRuntime = activeRuntime,
+                )
+
                 OutlinedTextField(
                     value = edited.name,
                     onValueChange = { edited = edited.copy(name = it) },
@@ -70,9 +99,87 @@ fun NetworkDetailScreen(
             TextButton(onClick = { onSave(edited) }) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
+}
+
+@Composable
+private fun RuntimeSection(
+    network: ZerotierBNetwork,
+    runtimeStatus: NetworkRuntimeStatus?,
+    activeRuntime: Runtime?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            stringResource(R.string.detail_runtime_section),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        when {
+            !network.isEnabled || activeRuntime == null || activeRuntime == Runtime.OFF -> {
+                Text(
+                    stringResource(R.string.detail_not_connected),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            runtimeStatus == null && activeRuntime == Runtime.VPN -> {
+                Text(
+                    stringResource(R.string.detail_vpn_main_only),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            runtimeStatus == null -> {
+                Text(
+                    stringResource(R.string.detail_not_connected),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                RuntimeListSection(
+                    title = stringResource(R.string.detail_addresses),
+                    lines = runtimeStatus.assignedAddresses,
+                )
+                RuntimeListSection(
+                    title = stringResource(R.string.detail_routes),
+                    lines = filterDisplayRoutes(
+                        runtimeStatus.routes,
+                        network.allowManaged,
+                        network.allowDefault,
+                        network.allowGlobal,
+                    ),
+                )
+                RuntimeListSection(
+                    title = stringResource(R.string.detail_dns),
+                    lines = runtimeStatus.dnsServers,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeListSection(title: String, lines: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge)
+        if (lines.isEmpty()) {
+            Text(
+                stringResource(R.string.detail_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            lines.forEach { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
 }
 
 @Composable

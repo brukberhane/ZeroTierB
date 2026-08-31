@@ -213,6 +213,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         selected?.let { network ->
             NetworkDetailScreen(
                 network = network,
+                joinStatus = joinChipStatus(
+                    viewModel.nodeLifecycle(),
+                    uiState.plan?.runtime,
+                    network.isEnabled,
+                    viewModel.networkRuntime(network.networkId),
+                ),
+                runtimeStatus = viewModel.networkRuntime(network.networkId),
+                activeRuntime = uiState.plan?.runtime,
                 onDismiss = viewModel::closeNetworkDetail,
                 onSave = viewModel::saveNetwork,
             )

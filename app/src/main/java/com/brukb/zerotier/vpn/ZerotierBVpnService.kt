@@ -18,6 +18,8 @@ import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.NetworkRuntimeStatus
+import com.brukb.zerotier.connection.formatAssignedCidr
+import com.brukb.zerotier.connection.formatRouteLine
 import com.brukb.zerotier.connection.vpnVirtualStatusToJoinStatus
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.ui.MainActivity
@@ -731,6 +733,18 @@ class ZerotierBVpnService :
             NetworkRuntimeStatus(
                 networkId = StringUtils.networkIdToString(id),
                 joinStatus = vpnVirtualStatusToJoinStatus(config.status),
+                assignedAddresses = config.assignedAddresses.mapNotNull {
+                    formatAssignedCidr(it.address.hostAddress, it.port)
+                },
+                routes = config.routes.mapNotNull { routeConfig ->
+                    val target = InetAddressUtils.addressToRoute(
+                        routeConfig.target.address,
+                        routeConfig.target.port,
+                    ) ?: return@mapNotNull null
+                    val cidr = "${target.hostAddress}/${routeConfig.target.port}"
+                    formatRouteLine(cidr, routeConfig.via?.address?.hostAddress)
+                },
+                dnsServers = config.dns?.servers?.mapNotNull { it.address.hostAddress }.orEmpty(),
             )
         }
         updateState { copy(networkStatuses = statuses) }
