@@ -6,6 +6,8 @@ import com.brukb.zerotier.data.AppPreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class SystemProxyManager(
     private val context: Context,
@@ -135,13 +137,44 @@ class SystemProxyManager(
         fun isOurLoopback(current: String?, lastPort: Int): Boolean =
             isOurs(current, lastPort)
 
+        fun parseLoopbackPort(value: String?): Int? {
+            if (value.isNullOrBlank() || !isLoopbackProxy(value)) return null
+            val trimmed = value.trim()
+            val portStr = when {
+                trimmed.startsWith("127.0.0.1:") -> trimmed.removePrefix("127.0.0.1:")
+                trimmed.startsWith("[::1]:") -> trimmed.removePrefix("[::1]:")
+                trimmed.startsWith("localhost:") -> trimmed.removePrefix("localhost:")
+                else -> return null
+            }
+            return portStr.toIntOrNull()?.takeIf { it in 1..65535 }
+        }
+
+        fun probeListen(port: Int, timeoutMs: Int = 400): Boolean {
+            if (port !in 1..65535) return false
+            return runCatching {
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
+                    true
+                }
+            }.getOrDefault(false)
+        }
+
+        /**
+         * [listenAlive] false = our loopback Global points at a dead port
+         * (native crash skipped onDestroy). Clear even if mode is still PROXY.
+         * Null = no probe; keep the old "only clear when not PROXY" gate.
+         */
         fun shouldClearStale(
             current: String?,
             saved: String?,
             lastPort: Int,
             proxyModeActive: Boolean,
-        ): Boolean =
-            !proxyModeActive && (isLoopbackProxy(current) || isOurLoopback(current, lastPort) || !saved.isNullOrBlank())
+            listenAlive: Boolean? = null,
+        ): Boolean {
+            if (isLoopbackProxy(current) && listenAlive == false) return true
+            if (proxyModeActive) return false
+            return isLoopbackProxy(current) || isOurLoopback(current, lastPort) || !saved.isNullOrBlank()
+        }
 
         fun shouldClearIfOurs(current: String?, markerPort: Int?): Boolean =
             isLoopbackProxy(current) || (markerPort != null && isOurs(current, markerPort))

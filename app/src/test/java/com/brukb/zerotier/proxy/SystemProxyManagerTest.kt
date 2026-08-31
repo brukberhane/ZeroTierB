@@ -96,6 +96,42 @@ class SystemProxyManagerTest {
     }
 
     @Test
+    fun shouldClearStale_deadListenClearsEvenInProxyMode() {
+        assertTrue(
+            SystemProxyManager.shouldClearStale(
+                "127.0.0.1:41275",
+                null,
+                41275,
+                proxyModeActive = true,
+                listenAlive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun shouldClearStale_liveListenKeepsProxyMode() {
+        assertFalse(
+            SystemProxyManager.shouldClearStale(
+                "127.0.0.1:41275",
+                null,
+                41275,
+                proxyModeActive = true,
+                listenAlive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun parseLoopbackPort_v4v6localhost() {
+        assertEquals(41275, SystemProxyManager.parseLoopbackPort("127.0.0.1:41275"))
+        assertEquals(8080, SystemProxyManager.parseLoopbackPort("[::1]:8080"))
+        assertEquals(3128, SystemProxyManager.parseLoopbackPort("localhost:3128"))
+        assertEquals(null, SystemProxyManager.parseLoopbackPort(":0"))
+        assertEquals(null, SystemProxyManager.parseLoopbackPort("10.0.0.1:3128"))
+        assertEquals(null, SystemProxyManager.parseLoopbackPort(null))
+    }
+
+    @Test
     fun isOurs_matchesLocalhostAndV6Loopback() {
         assertTrue(SystemProxyManager.isOurs("localhost:41275", 41275))
         assertTrue(SystemProxyManager.isOurs("[::1]:41275", 41275))

@@ -28,6 +28,7 @@ class ProxyHealthJobService : JobService() {
                         startAllowed = app.orchestrator.startAllowed,
                         startOnBoot = startOnBoot,
                         globalMode = mode,
+                        jobId = params?.jobId ?: ProxyHealthJob.JOB_ID,
                     )
                 ) {
                     if (!app.orchestrator.startAllowed) {
@@ -59,8 +60,12 @@ object ProxyHealthPolicy {
         startAllowed: Boolean,
         startOnBoot: Boolean,
         globalMode: GlobalMode,
+        jobId: Int = ProxyHealthJob.JOB_ID,
     ): Boolean {
         if (!shouldSchedule(globalMode)) return false
+        // One-shot after FGS timeout / LMK: mode is still PROXY/AUTO/VPN.
+        // Process death resets startAllowed; do not wait for start-on-boot.
+        if (jobId == ProxyHealthJob.RESTART_JOB_ID) return true
         if (startAllowed) return true
         return BootRestorePolicy.shouldRestore(RestoreTrigger.BOOT, startOnBoot, globalMode)
     }
@@ -72,6 +77,9 @@ object ProxyHealthPolicy {
 
 object ProxyHealthJob {
     const val JOB_ID = 7101
+    const val RESTART_JOB_ID = 7102
+    const val FGS_TIMEOUT_RESTART_DELAY_MS = 30_000L
+    const val PACKAGE_REPLACED_RESTART_DELAY_MS = 5_000L
     private const val PERIOD_MS = 15 * 60 * 1000L
     private const val TAG = "ProxyHealthJob"
 
@@ -100,9 +108,33 @@ object ProxyHealthJob {
         Log.i(TAG, "schedule periodic=$PERIOD_MS result=$result")
     }
 
+    /**
+     * One-shot after FGS onTimeout. Must not start FGS inside onTimeout
+     * (type quota may still be exhausted). Delay lets stopSelf finish, then
+     * [ProxyHealthJobService] calls refresh.
+     */
+    fun scheduleRestart(
+        context: Context,
+        delayMs: Long = FGS_TIMEOUT_RESTART_DELAY_MS,
+    ) {
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        val info = JobInfo.Builder(
+            RESTART_JOB_ID,
+            ComponentName(context, ProxyHealthJobService::class.java),
+        )
+            .setMinimumLatency(delayMs)
+            .setOverrideDeadline(delayMs + 90_000L)
+            .setPersisted(true)
+            .build()
+        val result = scheduler.schedule(info)
+        Log.i(TAG, "schedule restart delay=$delayMs result=$result")
+    }
+
     fun cancel(context: Context) {
         armedThisProcess = false
-        context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        scheduler.cancel(JOB_ID)
+        scheduler.cancel(RESTART_JOB_ID)
         Log.i(TAG, "cancelled")
     }
 }

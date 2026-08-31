@@ -22,6 +22,7 @@ import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.dns.DnsResolver
 import com.brukb.zerotier.proxy.http.HttpProxyServer
 import com.brukb.zerotier.system.IdleGate
+import com.brukb.zerotier.system.ProxyHealthJob
 import com.brukb.zerotier.system.ProxyWatchdog
 import com.brukb.zerotier.ui.MainActivity
 import com.brukb.zerotier.vpn.ZerotierBVpnService
@@ -42,8 +43,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -64,6 +63,7 @@ class ProxyModeService : Service() {
     private val startStopMutex = Mutex()
     private lateinit var idleGate: IdleGate
     private val recovering = AtomicBoolean(false)
+    private val fgsTimeoutHandled = AtomicBoolean(false)
     private var nodePausedForDoze = false
     private val pausedNetworks = mutableListOf<ZerotierBNetwork>()
     private val lastAppliedRuntime = mutableMapOf<Long, ZtNetworkStatus>()
@@ -100,6 +100,7 @@ class ProxyModeService : Service() {
         }
         // FGS 5s rule: sticky/null restarts also come in as startForegroundService.
         startForegroundCompat(buildNotification(_state.value.httpProxyPort ?: 0))
+        fgsTimeoutHandled.set(false)
         when (intent?.action) {
             ACTION_START -> {
                 if (_state.value.isRunning) {
@@ -142,11 +143,28 @@ class ProxyModeService : Service() {
 
     @Deprecated("Deprecated in Java")
     override fun onTimeout(startId: Int) {
-        failClosedAndStop("foreground service timeout")
+        handleFgsTimeout("foreground service timeout")
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        failClosedAndStop("foreground service timeout")
+        handleFgsTimeout("foreground service timeout type=$fgsType")
+    }
+
+    /**
+     * AOSP caps only dataSync/mediaProcessing at 6h/24h. specialUse has no
+     * published cap, but OEMs still call this. Must stopSelf within seconds.
+     * Restart goes through [ProxyHealthJob.scheduleRestart], not a same-call
+     * startForegroundService.
+     */
+    private fun handleFgsTimeout(reason: String) {
+        if (!fgsTimeoutHandled.compareAndSet(false, true)) return
+        Log.w(TAG, reason)
+        failClosedAndStop(reason)
+        val app = application as ZerotierBApplication
+        app.applicationScope.launch {
+            app.orchestrator.invalidateAppliedPlan()
+            ProxyHealthJob.scheduleRestart(app)
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -527,14 +545,7 @@ class ProxyModeService : Service() {
         }
     }
 
-    private fun probeTcp(port: Int): Boolean {
-        return runCatching {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress("127.0.0.1", port), 400)
-                true
-            }
-        }.getOrDefault(false)
-    }
+    private fun probeTcp(port: Int): Boolean = SystemProxyManager.probeListen(port)
 
     private fun startHealthLoop() {
         if (healthJob?.isActive == true) return
@@ -671,6 +682,7 @@ class ProxyModeService : Service() {
 
     private fun failClosedAndStop(reason: String) {
         Log.w(TAG, reason)
+        markStopped()
         stopHealthLoop()
         ProxyWatchdog.stop(this)
         systemProxyManager.disableBlocking()
@@ -678,8 +690,16 @@ class ProxyModeService : Service() {
         httpProxy = null
         runCatching { idleGate.unregister() }
         stopForeground(STOP_FOREGROUND_REMOVE)
-        markStopped()
         updateState { ProxyServiceState(hasSecureSettingsPermission = systemProxyManager.hasPermission()) }
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            startStopMutex.withLock {
+                if (nodeStarted || nodePausedForDoze) {
+                    runCatching { nodeManager.stop() }
+                    nodeStarted = false
+                    nodePausedForDoze = false
+                }
+            }
+        }
         stopSelf()
     }
 

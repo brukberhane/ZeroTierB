@@ -74,9 +74,19 @@ class ZerotierBApplication : Application() {
                 val current = mgr.currentProxy()
                 val saved = preferences.savedHttpProxy.first()
                 val lastPort = preferences.lastHttpProxyPort.first()
-                if (SystemProxyManager.shouldClearStale(current, saved, lastPort, mode == GlobalMode.PROXY)) {
+                val port = SystemProxyManager.parseLoopbackPort(current)
+                    ?: lastPort.takeIf { it > 0 && SystemProxyManager.isOurLoopback(current, lastPort) }
+                val listenAlive = port?.let { SystemProxyManager.probeListen(it) }
+                if (SystemProxyManager.shouldClearStale(
+                        current,
+                        saved,
+                        lastPort,
+                        mode == GlobalMode.PROXY,
+                        listenAlive,
+                    )
+                ) {
                     mgr.disable()
-                    Log.i(TAG, "Cleared stale system proxy (mode=$mode)")
+                    Log.i(TAG, "Cleared stale system proxy (mode=$mode listenAlive=$listenAlive)")
                 }
                 if (mode == GlobalMode.OFF) {
                     ProxyHealthJob.cancel(this@ZerotierBApplication)

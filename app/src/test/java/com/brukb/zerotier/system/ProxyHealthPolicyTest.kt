@@ -63,6 +63,41 @@ class ProxyHealthPolicyTest {
     }
 
     @Test
+    fun restartJobArmsAfterProcessDeathWithoutStartOnBoot() {
+        assertTrue(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = false,
+                startOnBoot = false,
+                globalMode = GlobalMode.PROXY,
+                jobId = ProxyHealthJob.RESTART_JOB_ID,
+            ),
+        )
+        assertFalse(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = false,
+                startOnBoot = false,
+                globalMode = GlobalMode.PROXY,
+                jobId = ProxyHealthJob.JOB_ID,
+            ),
+        )
+        assertFalse(
+            ProxyHealthPolicy.shouldArmFromJob(
+                startAllowed = false,
+                startOnBoot = false,
+                globalMode = GlobalMode.OFF,
+                jobId = ProxyHealthJob.RESTART_JOB_ID,
+            ),
+        )
+    }
+
+    @Test
+    fun restartJobIdDistinctFromPeriodic() {
+        assertTrue(ProxyHealthJob.JOB_ID != ProxyHealthJob.RESTART_JOB_ID)
+        assertTrue(ProxyHealthJob.FGS_TIMEOUT_RESTART_DELAY_MS > 0L)
+        assertTrue(ProxyHealthJob.PACKAGE_REPLACED_RESTART_DELAY_MS > 0L)
+    }
+
+    @Test
     fun callSchedulerOnlyWhenNotArmedAndNotPending() {
         assertTrue(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = false, pending = false))
         assertFalse(ProxyHealthPolicy.shouldCallScheduler(armedThisProcess = true, pending = false))

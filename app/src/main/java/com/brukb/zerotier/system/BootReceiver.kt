@@ -18,6 +18,11 @@ class BootReceiver : android.content.BroadcastReceiver() {
                 val globalMode = app.preferences.globalMode.first()
                 if (BootRestorePolicy.shouldRestore(trigger, startOnBoot, globalMode)) {
                     app.orchestrator.refresh()
+                    // FGS start from this receiver can be denied (OEM / type
+                    // quota). Job retries without requiring the user to open UI.
+                    if (trigger == RestoreTrigger.PACKAGE_REPLACED) {
+                        ProxyHealthJob.scheduleRestart(app, ProxyHealthJob.PACKAGE_REPLACED_RESTART_DELAY_MS)
+                    }
                 } else {
                     SystemProxyManager(context, app.preferences).clearIfOurs()
                     ProxyHealthJob.cancel(context)
