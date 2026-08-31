@@ -31,3 +31,8 @@
 - SOCKS5 BIND/UDP-ASSOCIATE
 - Automated tests
 - libzt stack-level `allowDNS` (no NetworkSettings field in libzt)
+- System DNS 6s NXDOMAIN + negative cache on TikTok CDN hosts while PROXY is up (`Unable to resolve host …: No address associated with hostname`). Separate from CONNECT relay stagnation. Revisit if stutter remains after idle timeout.
+
+## Known issues / watch
+
+- **CONNECT relay stagnation** (2026-08-31): PROXY felt slow over time; restart fixed it. Cause: HTTP/2 CONNECT keep-alives never reaped; fixed 64-thread relay pool deadlocks at 32 sessions. Mitigated: cached pool + 60s shared idle in `ProxyRelay`. Track in `.cursor/rules/android-http-proxy.mdc` (`CONNECT relay stagnation`). Re-open if idle 60s kills healthy long-polls or stutter returns.

@@ -13,6 +13,7 @@ class NetworkDnsResolverTest {
         assertTrue(resolver.shouldResolve("box.home.arpa"))
         assertFalse(resolver.shouldResolve("example.com"))
         assertFalse(resolver.shouldResolve("calibre.example.org"))
+        assertFalse(resolver.shouldResolve("docs.lan.bruk.dev"))
     }
 
     @Test
@@ -21,5 +22,14 @@ class NetworkDnsResolverTest {
         assertTrue(resolver.shouldResolve("host.zt.example"))
         assertTrue(resolver.shouldResolve("zt.example"))
         assertFalse(resolver.shouldResolve("example.com"))
+    }
+
+    @Test
+    fun namedDomain_lanSuffix() {
+        val resolver = NetworkDnsResolver(1L, "lan.bruk.dev", listOf("10.1.0.1"))
+        assertTrue(resolver.shouldResolve("docs.lan.bruk.dev"))
+        assertTrue(resolver.shouldResolve("lan.bruk.dev"))
+        assertFalse(resolver.shouldResolve("bruk.dev"))
+        assertFalse(resolver.shouldResolve("docs.lan.bruk.dev.evil.com"))
     }
 }

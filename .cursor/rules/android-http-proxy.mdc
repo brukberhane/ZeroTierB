@@ -72,3 +72,12 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 | `curl: (52) Empty reply from server` in ~2ms through `adb forward` | Proxy rebound a new ephemeral port on restart; adbd accepts the forward then fails to connect, which reads as an instant empty reply | Re-read `adb shell settings get global http_proxy` and re-forward the current port. Boundary: a **10s hang → 502** is ZT-side (see libzt rules), not staleness |
 
 <!-- last-verified: 2026-08 -->
+
+### `CONNECT relay stagnation`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Apps (TikTok search, Chrome, …) get slower/stuttery the longer PROXY stays up; restarting the proxy makes them snappy again. Some features “fail” then work after leaving the app. | CONNECT tunnels (HTTP/2 keep-alives) never idle-out. Each holds **2** `zt-relay` threads + **1** `Dispatchers.IO` thread. Old **fixed 64** pool deadlocks at **32** concurrent CONNECTs (both pumps queued, neither runs). System DNS also 6s-NXDOMAIN then negative-cache bursts (`Unable to resolve host …: No address associated with hostname`) — leave-app / retry recovers. | Cached relay pool (`newCachedThreadPool`) + **60s shared idle** timeout (`ProxyRelay`). Java sockets poll every 5s and check last-byte either direction. ZeroTierInputStream maps `SO_RCVTIMEO` to EOF — do **not** use the 5s poll on ZT; set ZT recv timeout to the idle window. Watch: if 60s is too aggressive (video pause / HTTP/2 PING slower than 60s), raise `DEFAULT_IDLE_TIMEOUT_MS`. DNS 6s NXDOMAIN is **not** fixed here. |
+
+<!-- last-verified: 2026-08-31. Repro: PROXY on, use TikTok + browser 5–10 min, watch stutter; after this fix, CONNECT count should drop when idle. Filter: `adb logcat -s ZtProxyDbg`. Session: TikTok stutter, ZtProxyDbg 38 open / 17 hung / peak 21. -->
+

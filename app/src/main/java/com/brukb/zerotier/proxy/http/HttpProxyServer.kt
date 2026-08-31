@@ -3,6 +3,7 @@ package com.brukb.zerotier.proxy.http
 import android.util.Log
 import com.brukb.zerotier.proxy.IpPrefix
 import com.brukb.zerotier.proxy.ProxyConnection
+import com.brukb.zerotier.proxy.ProxyDebugLog
 import com.brukb.zerotier.proxy.ProxyRelay
 import com.brukb.zerotier.proxy.RouteDecision
 import com.brukb.zerotier.proxy.RouteResolver
@@ -60,6 +61,7 @@ class HttpProxyServer(
                 runCatching {
                     val client = server.accept()
                     lastAcceptElapsed.set(android.os.SystemClock.elapsedRealtime())
+                    ProxyDebugLog.i("accept src=${client.remoteSocketAddress}")
                     launch {
                         runCatching {
                             HttpProxySession(
@@ -83,6 +85,7 @@ class HttpProxyServer(
             }
         }
         Log.i(TAG, "HTTP proxy listening on 127.0.0.1:$actualPort")
+        ProxyDebugLog.i("listen 127.0.0.1:$actualPort")
     }
 
     fun stop() {
@@ -126,12 +129,14 @@ class HttpProxySession(
             val method = parts[0]
             val target = parts[1]
             val headers = headerLines.subList(1, headerLines.size).takeWhile { it.isNotEmpty() }
+            val ua = headers.firstOrNull { it.startsWith("User-Agent:", ignoreCase = true) }
+                ?.substringAfter(':')?.trim() ?: "-"
             Log.i(TAG, "request $method $target")
             if (method.equals("CONNECT", ignoreCase = true)) {
-                handleConnect(target, input)
+                handleConnect(target, input, ua)
                 return
             }
-            if (!handlePlainHttp(method, target, headers, input)) {
+            if (!handlePlainHttp(method, target, headers, input, ua)) {
                 return
             }
         }
@@ -160,19 +165,23 @@ class HttpProxySession(
         }
     }
 
-    private fun handleConnect(target: String, input: InputStream) {
+    private fun handleConnect(target: String, input: InputStream, ua: String) {
         val (host, port) = parseHostPort(target, 443)
         val decision = resolveDecision(host)
         logRoute(host, port, decision)
+        ProxyDebugLog.i(
+            "req method=CONNECT host=$host port=$port src=${client.remoteSocketAddress} ua=$ua",
+        )
         val remote = try {
             openConnection(host, port, decision)
         } catch (e: Exception) {
             Log.w(TAG, "connect failed $host:$port", e)
+            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${decision.useZeroTier} err=${e.message}")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return
         }
+        ProxyDebugLog.i("reply CONNECT 200 host=$host port=$port")
         writeRaw(client.getOutputStream(), "HTTP/1.1 200 Connection Established\r\n\r\n")
-        client.soTimeout = 0
         ProxyRelay.relay(client, input, remote)
     }
 
@@ -186,6 +195,7 @@ class HttpProxySession(
         target: String,
         headers: List<String>,
         input: InputStream,
+        ua: String,
     ): Boolean {
         val url = java.net.URL(if (target.startsWith("http")) target else "http://$target")
         val host = url.host
@@ -193,10 +203,14 @@ class HttpProxySession(
         val path = url.path.ifEmpty { "/" } + (url.query?.let { "?$it" } ?: "")
         val decision = resolveDecision(host)
         logRoute(host, port, decision)
+        ProxyDebugLog.i(
+            "req method=$method host=$host port=$port src=${client.remoteSocketAddress} ua=$ua",
+        )
         val remote = try {
             openConnection(host, port, decision)
         } catch (e: Exception) {
             Log.w(TAG, "connect failed $host:$port", e)
+            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${decision.useZeroTier} err=${e.message}")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return true
         }
@@ -251,6 +265,7 @@ class HttpProxySession(
         }
         val statusLine = String(responseHeaders, Charsets.ISO_8859_1).split("\r\n").firstOrNull().orEmpty()
         Log.i(TAG, "response $statusLine")
+        ProxyDebugLog.i("reply host=$host port=$port status=$statusLine")
         clientOut.write(responseHeaders)
         clientOut.flush()
         pump(remoteIn, clientOut)
@@ -281,12 +296,12 @@ class HttpProxySession(
     }
 
     private fun openConnection(host: String, port: Int, decision: RouteDecision): ProxyConnection {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         return if (decision.useZeroTier) {
             val netId = decision.networkId ?: 0L
             val online = ZeroTierNative.zts_node_is_online()
             val ready = if (netId != 0L) ZeroTierNative.zts_net_transport_is_ready(netId) else -1
             Log.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
-            // zts_connect takes an IP string only — resolve hostnames first.
             val ip = ztConnectAddress(host, decision)
                 ?: throw IOException("No ZeroTier address for $host")
             val family = if (ip.contains(':')) {
@@ -299,15 +314,31 @@ class HttpProxySession(
                 socket.connect(InetAddress.getByName(ip), port, ZT_CONNECT_TIMEOUT_MS)
                 runCatching { socket.setTcpNoDelayEnabled(true) }
             } catch (e: Exception) {
+                val ms = android.os.SystemClock.elapsedRealtime() - t0
+                ProxyDebugLog.w(
+                    "connect FAIL via=zt host=$host ip=$ip port=$port ms=$ms " +
+                        "online=$online ready=$ready err=${e.message}",
+                )
                 runCatching { socket.close() }
                 throw e
             }
+            val ms = android.os.SystemClock.elapsedRealtime() - t0
+            ProxyDebugLog.i("connect OK via=zt host=$host ip=$ip port=$port ms=$ms online=$online ready=$ready")
             ProxyConnection.fromZeroTierSocket(socket)
         } else {
             val socket = Socket()
             socket.tcpNoDelay = true
-            socket.connect(InetSocketAddress(host, port), 15_000)
+            try {
+                socket.connect(InetSocketAddress(host, port), 15_000)
+            } catch (e: Exception) {
+                val ms = android.os.SystemClock.elapsedRealtime() - t0
+                ProxyDebugLog.w("connect FAIL via=tcp host=$host port=$port ms=$ms err=${e.message}")
+                runCatching { socket.close() }
+                throw e
+            }
             socket.soTimeout = 0
+            val ms = android.os.SystemClock.elapsedRealtime() - t0
+            ProxyDebugLog.i("connect OK via=tcp host=$host port=$port ms=$ms")
             ProxyConnection.fromSocket(socket)
         }
     }
@@ -360,6 +391,11 @@ class HttpProxySession(
             TAG,
             "route $host:$port -> useZeroTier=${decision.useZeroTier} " +
                 "net=${decision.networkId?.let { java.lang.Long.toUnsignedString(it, 16) }} " +
+                "reason=${decision.reason}",
+        )
+        ProxyDebugLog.i(
+            "route host=$host port=$port useZT=${decision.useZeroTier} " +
+                "net=${decision.networkId?.let { java.lang.Long.toUnsignedString(it, 16) } ?: "-"} " +
                 "reason=${decision.reason}",
         )
     }

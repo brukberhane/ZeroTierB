@@ -1,6 +1,7 @@
 package com.brukb.zerotier.proxy.dns
 
 import com.zerotier.sockets.ZeroTierDatagramSocket
+import com.brukb.zerotier.proxy.ProxyDebugLog
 import java.net.DatagramPacket
 import java.net.InetAddress
 import java.nio.ByteBuffer
@@ -40,7 +41,10 @@ class NetworkDnsResolver(
             val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
             socket.receive(responsePacket)
             parseDnsResponse(responseBuffer, responsePacket.length)
-        }.getOrElse { emptyList() }
+        }.getOrElse { err ->
+            ProxyDebugLog.w("dns-zt FAIL server=$server host=$host err=${err.message}")
+            emptyList()
+        }
     }
 
     private fun buildDnsQuery(host: String): ByteArray {
