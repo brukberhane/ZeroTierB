@@ -1,6 +1,6 @@
 # T13 — Settings bottom sheet with sections (Phase C)
 
-**Status**: Planned  
+**Status**: Done  
 **Parent INDEX**: [INDEX.md](./INDEX.md)  
 **Depends-on**: T12  
 **Next**: T14  
@@ -16,6 +16,8 @@ Replace the cramped `AlertDialog` settings with a **ModalBottomSheet** (or dedic
 | --------- | ----- | ---- | -- | ------- | ---- |
 | 2026-08-31 | created | — | Pending | /setup-tasks UI rewrite phase C | |
 | 2026-08-31 | planned | Pending | Planned | /task-1-plan — ModalBottomSheet replaces SettingsDialog | |
+| 2026-08-31 | execute | Planned | InProgress | /task-2-execute | |
+| 2026-08-31 | complete | InProgress | Done | /task-3-complete — ModalBottomSheet, sections, verify green | |
 
 ## Requirements
 
@@ -244,15 +246,30 @@ make verify
 
 ## Acceptance Criteria
 
-- [ ] Settings opens as bottom sheet, not alert dialog
-- [ ] All T09 settings toggles still reachable and functional
-- [ ] Section headers visible; battery vs reliability visually separated
-- [ ] "Manage link profiles" opens Links screen
-- [ ] `make verify` green
+- [x] Settings opens as bottom sheet, not alert dialog
+- [x] All T09 settings toggles still reachable and functional
+- [x] Section headers visible; battery vs reliability visually separated
+- [x] "Manage link profiles" opens Links screen
+- [x] `make verify` green
 
 ## Verification
 
-*(Filled by `/task-3-complete`)*
+**Date:** 2026-08-31  
+**Commands:**
+```bash
+test -f Makefile && grep -q '^verify' Makefile
+test -f lefthook.yml && test -f app/lint.xml
+make verify
+```
+**Result:** green (lint + unit tests + assembleDebug)
+
+## Files Modified
+
+- `app/src/main/java/com/brukb/zerotier/ui/SettingsBottomSheet.kt` (new)
+- `app/src/main/java/com/brukb/zerotier/ui/SettingsFormat.kt` (new)
+- `app/src/main/java/com/brukb/zerotier/ui/MainScreen.kt`
+- `app/src/main/res/values/strings.xml`
+- `app/src/test/java/com/brukb/zerotier/ui/SettingsFormatTest.kt` (new)
 
 ## Manual test (for humans)
 
@@ -263,7 +280,11 @@ make verify
 
 ## Learnings
 
-*(Filled on close-out)*
+- First `ModalBottomSheet` in app: `verticalScroll` + `skipPartiallyExpanded = true`; no nested `LazyColumn`.
+- `settingsGrantHintVisible()` centralizes grant-hint predicate (global PROXY or runtime PROXY, no secure settings).
+- Grant UI stays on main scroll; sheet only hints + dismiss.
+- Links shortcut must call `requestLinkPermissions` before `setShowLinks` (same as toolbar Wi-Fi icon).
+- `rememberModalBottomSheetState` deprecation warning on M3 1.5-alpha — acceptable; migrate to `rememberBottomSheetState` in T15 if needed.
 
 ## Reality notes
 

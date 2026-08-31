@@ -115,3 +115,8 @@ make verify
 
 - `MaterialExpressiveTheme` is wired in `ZerotierBTheme` (T12). Motion polish can use Expressive APIs without another theme change.
 - Copy node ID on hero is T15 — hero already shows monospace full ID.
+
+### From T13 close-out
+
+- Settings sheet (`SettingsBottomSheet`) shipped with read-only package/node ID in Advanced — T15 adds clipboard + snackbar there and on hero.
+- `rememberModalBottomSheetState` deprecation — optional migrate to `rememberBottomSheetState` during T15 layout pass.

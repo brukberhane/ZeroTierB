@@ -85,3 +85,27 @@ Does **not** cover: orchestrator internals.
 | Row chip shows Joining while hero shows Paused (Doze) | `joinChipStatus` treats null `networkRuntime` as JOINING even when lifecycle is `PAUSED_DOZE` | Return `null` (hide chip) for `PAUSED_DOZE` and `STOPPED` before the null-map → JOINING fallback |
 
 <!-- last-verified: 2026-08 -->
+
+### `Settings sheet duplicates grant UI`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Grant card and settings sheet both show Shizuku/ADB UI; confusing duplicate | Sheet tried to embed full privileged-grant flow | Reliability section: **hint row only** when proxy lacks secure settings; dismiss sheet so main scroll `GrantSecureSettingsCard` stays single source of truth |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `Settings sheet nested scroll / half-height stuck`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Settings sheet content clipped or stuck half-expanded on small screens | `LazyColumn` inside `ModalBottomSheet` or default partial expand | Body: `Column` + `verticalScroll(rememberScrollState())`; `rememberModalBottomSheetState(skipPartiallyExpanded = true)` |
+
+<!-- last-verified: 2026-08-31 -->
+
+### `Links shortcut from settings missing SSID permission`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Links overlay opens from settings but SSID rows empty / no location prompt | Shortcut called `setShowLinks(true)` without permission launcher | Mirror Wi-Fi toolbar: `requestLinkPermissions` then `setShowLinks(true)`; dismiss sheet first |
+
+<!-- last-verified: 2026-08-31 -->

@@ -76,6 +76,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     var showSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activity = context as? MainActivity
+    val showGrant = settingsGrantHintVisible(
+        uiState.globalMode,
+        uiState.plan?.runtime,
+        uiState.proxy.hasSecureSettingsPermission,
+    )
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -157,10 +162,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     }
                 }
 
-                val showGrant = (uiState.globalMode == GlobalMode.PROXY ||
-                    uiState.plan?.runtime == Runtime.PROXY) &&
-                    !uiState.proxy.hasSecureSettingsPermission
-                if (showGrant) {
+                val showGrantCard = showGrant
+                if (showGrantCard) {
                     GrantSecureSettingsCard(
                         shizukuAvailable = ShizukuPermissionHelper.isAvailable(),
                         adbCommand = SystemProxyManager.adbGrantCommand(context.packageName),
@@ -223,17 +226,27 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
 
         if (showSettings) {
-            SettingsDialog(
+            SettingsBottomSheet(
                 startOnBoot = uiState.startOnBoot,
                 watchdogEnabled = uiState.privilegedWatchdogEnabled,
                 pauseNodeInDoze = uiState.pauseNodeInDoze,
                 batteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context),
+                linkDebounceSec = uiState.linkDebounceMs / 1000,
+                showGrantHint = showGrant,
+                packageName = context.packageName,
+                nodeId = viewModel.nodeId(),
                 onDismiss = { showSettings = false },
                 onStartOnBoot = viewModel::setStartOnBoot,
                 onWatchdogEnabled = viewModel::setPrivilegedWatchdogEnabled,
                 onPauseNodeInDoze = viewModel::setPauseNodeInDoze,
                 onRequestBatteryExemption = { activity?.openBatteryOptimizationSettings() },
                 onOpenBatterySettings = { activity?.openBatteryOptimizationSettingsPage() },
+                onOpenLinks = {
+                    showSettings = false
+                    requestLinkPermissions(permissionLauncher)
+                    viewModel.setShowLinks(true)
+                },
+                onGrantHint = { showSettings = false },
             )
         }
         if (showBatteryOpt) {
@@ -415,112 +428,6 @@ private fun AddNetworkDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun SettingsDialog(
-    startOnBoot: Boolean,
-    watchdogEnabled: Boolean,
-    pauseNodeInDoze: Boolean,
-    batteryUnrestricted: Boolean,
-    onDismiss: () -> Unit,
-    onStartOnBoot: (Boolean) -> Unit,
-    onWatchdogEnabled: (Boolean) -> Boolean,
-    onPauseNodeInDoze: (Boolean) -> Unit,
-    onRequestBatteryExemption: () -> Unit,
-    onOpenBatterySettings: () -> Unit,
-) {
-    var watchdogError by remember { mutableStateOf<String?>(null) }
-    val shizukuRequired = stringResource(R.string.watchdog_needs_shizuku)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.start_on_boot))
-                    Switch(checked = startOnBoot, onCheckedChange = onStartOnBoot)
-                }
-                Text(
-                    stringResource(R.string.start_on_boot_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.watchdog_title),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = watchdogEnabled,
-                        onCheckedChange = { enabled ->
-                            if (onWatchdogEnabled(enabled)) {
-                                watchdogError = null
-                            } else {
-                                watchdogError = shizukuRequired
-                            }
-                        },
-                    )
-                }
-                Text(
-                    stringResource(R.string.watchdog_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                watchdogError?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.pause_doze_title),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = pauseNodeInDoze, onCheckedChange = onPauseNodeInDoze)
-                }
-                Text(
-                    stringResource(R.string.pause_doze_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(
-                        if (batteryUnrestricted) {
-                            R.string.battery_opt_status_ok
-                        } else {
-                            R.string.battery_opt_status_restricted
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (batteryUnrestricted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                )
-                TextButton(onClick = onRequestBatteryExemption) {
-                    Text(stringResource(R.string.battery_opt_request))
-                }
-                TextButton(onClick = onOpenBatterySettings) {
-                    Text(stringResource(R.string.battery_opt_list))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
 }

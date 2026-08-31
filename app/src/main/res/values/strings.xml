@@ -42,6 +42,16 @@
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_section_reliability">Reliability</string>
+    <string name="settings_section_battery">Battery</string>
+    <string name="settings_section_links">Links</string>
+    <string name="settings_section_advanced">Advanced</string>
+    <string name="settings_manage_links">Manage link profiles</string>
+    <string name="settings_edit_in_links">Edit in Links</string>
+    <string name="settings_debounce_summary">Link debounce: %1$d s</string>
+    <string name="settings_grant_hint">System proxy permission needed — dismiss to use the grant card on the main screen</string>
+    <string name="settings_debug_package">Package: %1$s</string>
+    <string name="settings_debug_node_id">Node ID: %1$s</string>
     <string name="start_on_boot">Restore mode on boot</string>
     <string name="start_on_boot_hint">Re-applies PROXY, VPN, or AUTO after reboot. OFF stays off.</string>
     <string name="watchdog_title">Clear dead system proxy (Shizuku)</string>

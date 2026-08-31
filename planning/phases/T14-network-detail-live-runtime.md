@@ -102,3 +102,8 @@ Upgrade `NetworkDetailScreen` from static Room fields to a **live runtime panel*
 
 - Reuse `JoinStatusChip(status)` on detail header — do not duplicate chip styling.
 - `joinChipStatus(lifecycle, plan.runtime, enabled, viewModel.networkRuntime(id))` for visibility rules.
+
+### From T13 close-out
+
+- Settings is `SettingsBottomSheet` (`ModalBottomSheet`), not `AlertDialog`. Unrelated to detail screen but confirms UI rewrite phase C done.
+- Debug package/node ID patterns in settings Advanced — T15 adds clipboard on similar read-only lines.

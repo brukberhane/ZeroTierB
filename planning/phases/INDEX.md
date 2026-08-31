@@ -20,7 +20,7 @@
 | T11 | [Proxy/VPN unified runtime state](./T11-proxy-vpn-unified-runtime-state.md) | ✅ | T09 | T11.5 | L7 | UI rewrite phase A — data layer |
 | T11.5 | [AGP 9 + Compose Expressive toolchain](./T11.5-agp9-compose-expressive-toolchain.md) | ✅ | T11 | T12 | L0 | Approved AGP/Kotlin/compileSdk bump; no product UI |
 | T12 | [Runtime hero card + status chips](./T12-runtime-hero-card-status-chips.md) | ✅ | T11.5 | T13 | L7 | UI rewrite phase B — hero + chips (Expressive after T11.5) |
-| T13 | [Settings bottom sheet sections](./T13-settings-bottom-sheet-sections.md) | Pending | T12 | T14 | L7 | UI rewrite phase C — settings UX |
+| T13 | [Settings bottom sheet sections](./T13-settings-bottom-sheet-sections.md) | ✅ | T12 | T14 | L7 | UI rewrite phase C — settings UX |
 | T14 | [Network detail live runtime](./T14-network-detail-live-runtime.md) | Pending | T13 | T15 | L7 | UI rewrite phase D — routes/DNS |
 | T15 | [UI polish: motion, empty states, copy](./T15-ui-polish-motion-empty-states.md) | Pending | T14 | T10 | L7 | UI rewrite phase E — polish |
 | T10 | [E2E / CoS proof](./T10-e2e-cos-proof.md) | Pending | T15 | — | L8 | Run after UI rewrite A–E |
