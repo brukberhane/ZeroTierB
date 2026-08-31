@@ -33,7 +33,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDirs("../externals/ZeroTierOne/java/src")
+            java.srcDirs("../libzt/ext/ZeroTierOne/java/src")
             manifest.srcFile("src/main/AndroidManifest.xml")
         }
     }

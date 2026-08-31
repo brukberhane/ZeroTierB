@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.2)
 # does not need a submodule patch. Source list matches ZeroTierOne 1596029.
 project(ZeroTierOneJNI)
 
-set(ZTO "${CMAKE_CURRENT_SOURCE_DIR}/../externals/ZeroTierOne")
+set(ZTO "${CMAKE_CURRENT_SOURCE_DIR}/../libzt/ext/ZeroTierOne")
 
 find_package(Java COMPONENTS Development)
 message("JAVA_HOME: $ENV{JAVA_HOME}")

@@ -69,8 +69,11 @@ class ProxyModeService : Service() {
         dnsResolver = DnsResolver()
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
         systemProxyManager = SystemProxyManager(this, (application as ZerotierBApplication).preferences)
-        idleGate = IdleGate(this) { allow, deviceIdle ->
-            if (allow) {
+        idleGate = IdleGate(this) { _, deviceIdle ->
+            // Resume on screen-on even if isDeviceIdleMode still true for a beat.
+            // allowPeriodicWork requires !idle, so SCREEN_ON-during-Doze used to
+            // call onBecameIdle again and never resume.
+            if (idleGate.isInteractive) {
                 scope.launch { onBecameInteractive() }
             } else {
                 onBecameIdle(deviceIdle)
@@ -93,7 +96,9 @@ class ProxyModeService : Service() {
         startForegroundCompat(buildNotification(_state.value.httpProxyPort ?: 0))
         when (intent?.action) {
             ACTION_START -> {
-                if (!_state.value.isRunning) {
+                if (_state.value.isRunning) {
+                    scope.launch { resumeFromIdleIfNeeded() }
+                } else {
                     updateState { copy(isRunning = true, statusMessage = "Starting proxy...") }
                     scope.launch {
                         startStopMutex.withLock {
@@ -489,7 +494,7 @@ class ProxyModeService : Service() {
         }
     }
 
-    private suspend fun onBecameInteractive() {
+    private suspend fun resumeFromIdleIfNeeded() {
         oneShotListenCheck()
         if (_state.value.isRunning) {
             startHealthLoop()
@@ -498,6 +503,10 @@ class ProxyModeService : Service() {
         if (nodePausedForDoze) {
             startStopMutex.withLock { resumeNodeFromDoze() }
         }
+    }
+
+    private suspend fun onBecameInteractive() {
+        resumeFromIdleIfNeeded()
     }
 
     private fun oneShotListenCheck() {
@@ -526,8 +535,12 @@ class ProxyModeService : Service() {
     private suspend fun resumeNodeFromDoze() {
         if (!nodePausedForDoze) return
         Log.i(TAG, "Resuming ZeroTier node after Doze")
+        nodeManager.initialize().onFailure {
+            Log.w(TAG, "Node re-init failed: ${it.message}")
+        }
         nodeManager.start().onFailure {
             Log.w(TAG, "Node resume failed: ${it.message}")
+            updateState { copy(statusMessage = "ZeroTier paused (Doze) — resume failed") }
             return
         }
         nodeStarted = true
@@ -536,7 +549,10 @@ class ProxyModeService : Service() {
             joinConfiguredNetwork(network, startToken = 0L)
         }
         pausedNetworks.clear()
-        updateState { copy(statusMessage = "Proxy on 127.0.0.1:${httpProxy?.boundPort ?: 0}") }
+        val port = httpProxy?.boundPort ?: 0
+        updateState {
+            copy(statusMessage = if (port > 0) "Proxy on 127.0.0.1:$port" else "Running")
+        }
     }
 
     private fun failClosedAndStop(reason: String) {
@@ -600,7 +616,8 @@ class ProxyModeService : Service() {
         }
 
         fun start(context: Context, forceDebug: Boolean = false, joinNetworkIds: List<String>? = null) {
-            val token = startCounter.incrementAndGet()
+            val alreadyRunning = state.value.isRunning
+            val token = if (alreadyRunning) 0L else startCounter.incrementAndGet()
             val intent = Intent(context, ProxyModeService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_FORCE_DEBUG, forceDebug)

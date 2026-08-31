@@ -163,6 +163,10 @@ class ConnectionOrchestrator(
                     ProxyModeService.state.value.lastError ?: "Proxy service did not start",
                 )
             }
+        } else {
+            // Already up (including Doze-paused). Poke START so the service
+            // resumes the node; do not increment the start token.
+            ProxyModeService.start(context, joinNetworkIds = plan.joinNetworkIds)
         }
     }
 
