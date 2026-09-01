@@ -47,6 +47,7 @@ data class MainUiState(
     val startOnBoot: Boolean = false,
     val privilegedWatchdogEnabled: Boolean = false,
     val pauseNodeInDoze: Boolean = false,
+    val dnsFailOpen: Boolean = true,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,6 +64,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         app.preferences.startOnBoot,
         app.preferences.privilegedWatchdogEnabled,
         app.preferences.pauseNodeInDoze,
+        app.preferences.dnsFailOpen,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val mode = values[0] as GlobalMode
@@ -75,6 +77,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val boot = values[7] as Boolean
         val watchdog = values[8] as Boolean
         val pauseDoze = values[9] as Boolean
+        val dnsFailOpen = values[10] as Boolean
         MainUiState(
             globalMode = mode,
             plan = orch.plan,
@@ -90,6 +93,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startOnBoot = boot,
             privilegedWatchdogEnabled = watchdog,
             pauseNodeInDoze = pauseDoze,
+            dnsFailOpen = dnsFailOpen,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -199,6 +203,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setPauseNodeInDoze(enabled: Boolean) {
         viewModelScope.launch {
             app.preferences.setPauseNodeInDoze(enabled)
+        }
+    }
+
+    fun setDnsFailOpen(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setDnsFailOpen(enabled)
         }
     }
 

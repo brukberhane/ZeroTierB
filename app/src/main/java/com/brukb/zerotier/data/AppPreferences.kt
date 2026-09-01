@@ -26,6 +26,7 @@ class AppPreferences(private val context: Context) {
     private val batteryOptPromptedKey = booleanPreferencesKey("battery_opt_prompted")
     private val privilegedWatchdogKey = booleanPreferencesKey("privileged_watchdog")
     private val pauseNodeInDozeKey = booleanPreferencesKey("pause_node_in_doze")
+    private val dnsFailOpenKey = booleanPreferencesKey("dns_fail_open")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -42,6 +43,9 @@ class AppPreferences(private val context: Context) {
     }
     val pauseNodeInDoze: Flow<Boolean> = context.dataStore.data.map {
         it[pauseNodeInDozeKey] ?: false
+    }
+    val dnsFailOpen: Flow<Boolean> = context.dataStore.data.map {
+        it[dnsFailOpenKey] ?: true
     }
 
     suspend fun setStartOnBoot(enabled: Boolean) {
@@ -90,6 +94,10 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setPauseNodeInDoze(enabled: Boolean) {
         context.dataStore.edit { it[pauseNodeInDozeKey] = enabled }
+    }
+
+    suspend fun setDnsFailOpen(enabled: Boolean) {
+        context.dataStore.edit { it[dnsFailOpenKey] = enabled }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

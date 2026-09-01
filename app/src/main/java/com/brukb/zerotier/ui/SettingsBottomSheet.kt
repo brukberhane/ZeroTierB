@@ -40,6 +40,7 @@ fun SettingsBottomSheet(
     startOnBoot: Boolean,
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
+    dnsFailOpen: Boolean,
     batteryUnrestricted: Boolean,
     linkDebounceSec: Int,
     showGrantHint: Boolean,
@@ -49,6 +50,7 @@ fun SettingsBottomSheet(
     onStartOnBoot: (Boolean) -> Unit,
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
+    onDnsFailOpen: (Boolean) -> Unit,
     onRequestBatteryExemption: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onOpenLinks: () -> Unit,
@@ -157,6 +159,16 @@ fun SettingsBottomSheet(
                 }
 
                 SettingsSection(title = stringResource(R.string.settings_section_advanced)) {
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.dns_fail_open_title),
+                        checked = dnsFailOpen,
+                        onCheckedChange = onDnsFailOpen,
+                    )
+                    Text(
+                        stringResource(R.string.dns_fail_open_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
                         stringResource(R.string.settings_debounce_summary, linkDebounceSec),
                         style = MaterialTheme.typography.bodyMedium,

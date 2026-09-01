@@ -19,6 +19,7 @@ import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.ztNetworkToRuntime
 import com.brukb.zerotier.connection.ztNodeStateToLifecycle
 import com.brukb.zerotier.data.model.ZerotierBNetwork
+import com.brukb.zerotier.proxy.dns.AndroidUplinkDnsClient
 import com.brukb.zerotier.proxy.dns.DnsResolver
 import com.brukb.zerotier.proxy.http.HttpProxyServer
 import com.brukb.zerotier.system.IdleGate
@@ -72,7 +73,7 @@ class ProxyModeService : Service() {
         super.onCreate()
         createNotificationChannel()
         routeResolver = RouteResolver()
-        dnsResolver = DnsResolver()
+        dnsResolver = DnsResolver(AndroidUplinkDnsClient(this))
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
         systemProxyManager = SystemProxyManager(this, (application as ZerotierBApplication).preferences)
         idleGate = IdleGate(this) { _, deviceIdle ->
@@ -88,6 +89,12 @@ class ProxyModeService : Service() {
         idleGate.register()
         scope.launch {
             updateState { copy(hasSecureSettingsPermission = systemProxyManager.hasPermission()) }
+        }
+        scope.launch {
+            (application as ZerotierBApplication).preferences.dnsFailOpen.collect { open ->
+                dnsResolver.failOpen = open
+                Log.i(TAG, "dns failOpen=$open")
+            }
         }
     }
 

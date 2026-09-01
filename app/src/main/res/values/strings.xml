@@ -70,6 +70,8 @@
     <string name="watchdog_needs_shizuku">Shizuku required</string>
     <string name="pause_doze_title">Pause ZeroTier in Doze</string>
     <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
+    <string name="dns_fail_open_title">DNS fail-open</string>
+    <string name="dns_fail_open_hint">If Private DNS fails, use Wi-Fi or cellular DNS so the proxy still loads sites. Off: Private DNS only — CONNECT fails instead of using the link resolver.</string>
     <string name="links_title">Links</string>
     <string name="current_link">Current link</string>
     <string name="save_ssid">Save SSID</string>

@@ -167,16 +167,16 @@ class HttpProxySession(
 
     private fun handleConnect(target: String, input: InputStream, ua: String) {
         val (host, port) = parseHostPort(target, 443)
-        val decision = resolveDecision(host)
-        logRoute(host, port, decision)
+        val resolved = resolveTarget(host, port)
+        logRoute(host, port, resolved.decision)
         ProxyDebugLog.i(
             "req method=CONNECT host=$host port=$port src=${client.remoteSocketAddress} ua=$ua",
         )
         val remote = try {
-            openConnection(host, port, decision)
+            openConnection(resolved)
         } catch (e: Exception) {
             Log.w(TAG, "connect failed $host:$port", e)
-            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${decision.useZeroTier} err=${e.message}")
+            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${resolved.decision.useZeroTier} err=${e.message}")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return
         }
@@ -201,16 +201,16 @@ class HttpProxySession(
         val host = url.host
         val port = if (url.port > 0) url.port else 80
         val path = url.path.ifEmpty { "/" } + (url.query?.let { "?$it" } ?: "")
-        val decision = resolveDecision(host)
-        logRoute(host, port, decision)
+        val resolved = resolveTarget(host, port)
+        logRoute(host, port, resolved.decision)
         ProxyDebugLog.i(
             "req method=$method host=$host port=$port src=${client.remoteSocketAddress} ua=$ua",
         )
         val remote = try {
-            openConnection(host, port, decision)
+            openConnection(resolved)
         } catch (e: Exception) {
             Log.w(TAG, "connect failed $host:$port", e)
-            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${decision.useZeroTier} err=${e.message}")
+            ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${resolved.decision.useZeroTier} err=${e.message}")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return true
         }
@@ -287,22 +287,31 @@ class HttpProxySession(
         return true
     }
 
-    private fun resolveDecision(host: String): RouteDecision {
-        if (IpPrefix.isIpLiteral(host)) {
-            return routeResolver.resolveIpString(host)
+    private fun resolveTarget(host: String, port: Int): ResolvedTarget {
+        val addresses = if (IpPrefix.isIpLiteral(host)) {
+            listOfNotNull(runCatching { InetAddress.getByName(host) }.getOrNull())
+        } else {
+            dnsResolver.resolve(host)
         }
-        val addresses = dnsResolver.resolve(host)
-        return routeResolver.resolveHost(host, addresses)
+        val decision = if (IpPrefix.isIpLiteral(host)) {
+            routeResolver.resolveIpString(host)
+        } else {
+            routeResolver.resolveHost(host, addresses)
+        }
+        return ResolvedTarget(host, port, addresses, decision)
     }
 
-    private fun openConnection(host: String, port: Int, decision: RouteDecision): ProxyConnection {
+    private fun openConnection(target: ResolvedTarget): ProxyConnection {
+        val host = target.host
+        val port = target.port
+        val decision = target.decision
         val t0 = android.os.SystemClock.elapsedRealtime()
         return if (decision.useZeroTier) {
             val netId = decision.networkId ?: 0L
             val online = ZeroTierNative.zts_node_is_online()
             val ready = if (netId != 0L) ZeroTierNative.zts_net_transport_is_ready(netId) else -1
             Log.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
-            val ip = ztConnectAddress(host, decision)
+            val ip = ztConnectAddress(target)
                 ?: throw IOException("No ZeroTier address for $host")
             val family = if (ip.contains(':')) {
                 ZeroTierNative.ZTS_AF_INET6
@@ -326,31 +335,43 @@ class HttpProxySession(
             ProxyDebugLog.i("connect OK via=zt host=$host ip=$ip port=$port ms=$ms online=$online ready=$ready")
             ProxyConnection.fromZeroTierSocket(socket)
         } else {
+            val ip = target.addresses.firstOrNull()
+                ?: throw IOException("No address for $host")
             val socket = Socket()
             socket.tcpNoDelay = true
             try {
-                socket.connect(InetSocketAddress(host, port), 15_000)
+                socket.connect(InetSocketAddress(ip, port), 15_000)
             } catch (e: Exception) {
                 val ms = android.os.SystemClock.elapsedRealtime() - t0
-                ProxyDebugLog.w("connect FAIL via=tcp host=$host port=$port ms=$ms err=${e.message}")
+                ProxyDebugLog.w(
+                    "connect FAIL via=tcp host=$host ip=${ip.hostAddress} port=$port ms=$ms err=${e.message}",
+                )
                 runCatching { socket.close() }
                 throw e
             }
             socket.soTimeout = 0
             val ms = android.os.SystemClock.elapsedRealtime() - t0
-            ProxyDebugLog.i("connect OK via=tcp host=$host port=$port ms=$ms")
+            ProxyDebugLog.i("connect OK via=tcp host=$host ip=${ip.hostAddress} port=$port ms=$ms")
             ProxyConnection.fromSocket(socket)
         }
     }
 
-    private fun ztConnectAddress(host: String, decision: RouteDecision): String? {
-        if (IpPrefix.isIpLiteral(host)) return host
-        val addresses = dnsResolver.resolve(host)
-        return addresses.firstOrNull { addr ->
+    private fun ztConnectAddress(target: ResolvedTarget): String? {
+        if (IpPrefix.isIpLiteral(target.host)) return target.host
+        return target.addresses.firstOrNull { addr ->
             val ip = addr.hostAddress ?: return@firstOrNull false
-            routeResolver.resolveIpString(ip).let { it.useZeroTier && it.networkId == decision.networkId }
+            routeResolver.resolveIpString(ip).let {
+                it.useZeroTier && it.networkId == target.decision.networkId
+            }
         }?.hostAddress
     }
+
+    private data class ResolvedTarget(
+        val host: String,
+        val port: Int,
+        val addresses: List<InetAddress>,
+        val decision: RouteDecision,
+    )
 
     private fun pump(input: InputStream, output: OutputStream) {
         ProxyRelay.pump(input, output)
