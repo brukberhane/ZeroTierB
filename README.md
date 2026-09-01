@@ -106,7 +106,7 @@ See [`planning/phases/INDEX.md`](planning/phases/INDEX.md).
 
 ## 🔨 Build / verify
 
-Requires JDK 17, Android SDK (`ANDROID_HOME`) with **`platforms;android-37.0`** (package id, not `android-37`) and **build-tools 36.0.0**, NDK 25.1.8937393 (JNI). libzt Android build uses SDK CMake **4.1.2** (`sdkmanager "cmake;4.1.2"` — on Termux/aarch64 use 4.1.2, not 3.22.1 which is x86_64-only).
+Requires JDK 17, Android SDK (`ANDROID_HOME`) with **`platforms;android-37.0`** (package id, not `android-37`) and **build-tools 36.0.0**, NDK 25.1.8937393 (JNI). SDK CMake 3.22.1 for libzt's Android build on **x86_64** hosts (`sdkmanager "cmake;3.22.1"`). The libzt AAR cannot be built on aarch64 Termux (NDK host toolchain is x86_64-only); build it on desktop and copy `libzt/dist/.../libzt-release.aar`, or use `build-termux.sh` after the AAR exists.
 
 ```bash
 git submodule update --init --recursive
@@ -133,7 +133,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$PREFIX/opt/android-sdk}"
 ./scripts/build-termux.sh
 ```
 
-`build-termux.sh` builds the libzt AAR if missing, then the APK.
+`build-termux.sh` assembles the APK. The libzt AAR must exist first — build it on an **x86_64** desktop (`./scripts/build-libzt.sh`) and copy `libzt/dist/android-any-android-release/libzt-release.aar` to the device, or sync a tree that already contains it.
 
 Toolchain (this clone, T11.5): **AGP 9.2.1**, **Gradle 9.4.1**, **Kotlin 2.2.21** (built-in Kotlin + Compose compiler plugin), **KSP 2.3.11**, **compose-bom-alpha:2026.08.01** (material3 **1.5.0-alpha27**), **compileSdk 37**, **targetSdk 35**, **minSdk 26**. SDK: `platforms/android-37.0`, build-tools **36.0.0**. Do not bump AGP/Kotlin/compileSdk as drive-bys. Stable `compose-bom` maps material3 1.4.0 (no Expressive) — keep the alpha BOM until material3 1.5 is stable.
 
