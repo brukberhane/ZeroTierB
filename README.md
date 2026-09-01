@@ -106,7 +106,7 @@ See [`planning/phases/INDEX.md`](planning/phases/INDEX.md).
 
 ## 🔨 Build / verify
 
-Requires JDK 17, Android SDK (`ANDROID_HOME`) with **`platforms;android-37.0`** (package id, not `android-37`) and **build-tools 36.0.0**, NDK 25.1.8937393 (JNI). SDK CMake 3.22.1 for libzt's Android build (`sdkmanager "cmake;3.22.1"`).
+Requires JDK 17, Android SDK (`ANDROID_HOME`) with **`platforms;android-37.0`** (package id, not `android-37`) and **build-tools 36.0.0**, NDK 25.1.8937393 (JNI). libzt Android build uses SDK CMake **4.1.2** (`sdkmanager "cmake;4.1.2"` — on Termux/aarch64 use 4.1.2, not 3.22.1 which is x86_64-only).
 
 ```bash
 git submodule update --init --recursive
