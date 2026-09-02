@@ -27,6 +27,7 @@ class AppPreferences(private val context: Context) {
     private val privilegedWatchdogKey = booleanPreferencesKey("privileged_watchdog")
     private val pauseNodeInDozeKey = booleanPreferencesKey("pause_node_in_doze")
     private val dnsFailOpenKey = booleanPreferencesKey("dns_fail_open")
+    private val verboseFileLogKey = booleanPreferencesKey("verbose_file_log")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -46,6 +47,9 @@ class AppPreferences(private val context: Context) {
     }
     val dnsFailOpen: Flow<Boolean> = context.dataStore.data.map {
         it[dnsFailOpenKey] ?: true
+    }
+    val verboseFileLog: Flow<Boolean> = context.dataStore.data.map {
+        it[verboseFileLogKey] ?: false
     }
 
     suspend fun setStartOnBoot(enabled: Boolean) {
@@ -98,6 +102,10 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setDnsFailOpen(enabled: Boolean) {
         context.dataStore.edit { it[dnsFailOpenKey] = enabled }
+    }
+
+    suspend fun setVerboseFileLog(enabled: Boolean) {
+        context.dataStore.edit { it[verboseFileLogKey] = enabled }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

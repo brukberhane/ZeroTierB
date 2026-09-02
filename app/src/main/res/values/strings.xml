@@ -72,6 +72,10 @@
     <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
     <string name="dns_fail_open_title">DNS fail-open</string>
     <string name="dns_fail_open_hint">If Private DNS fails, use Wi-Fi or cellular DNS so the proxy still loads sites. Off: Private DNS only — CONNECT fails instead of using the link resolver.</string>
+    <string name="verbose_file_log_title">Verbose file log</string>
+    <string name="verbose_file_log_hint">Off: start/stop, errors, DNS failures. On: every CONNECT/DNS line. Rotates at 1 MB × 2. Survives force-stop.</string>
+    <string name="export_logs">Export logs</string>
+    <string name="export_logs_chooser">Share ZerotierB logs</string>
     <string name="links_title">Links</string>
     <string name="current_link">Current link</string>
     <string name="save_ssid">Save SSID</string>

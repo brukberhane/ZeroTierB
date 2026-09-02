@@ -2,7 +2,7 @@ package com.brukb.zerotier.system
 
 import android.content.Context
 import android.os.PowerManager
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.proxy.SystemProxyManager
 import java.io.File
 
@@ -34,11 +34,11 @@ object ProxyWatchdog {
     fun startIfNeeded(context: Context) {
         val power = context.getSystemService(PowerManager::class.java)
         if (!power.isInteractive || power.isDeviceIdleMode) {
-            Log.i(TAG, "skip start: not interactive")
+            AppLog.i(TAG, "skip start: not interactive")
             return
         }
         if (!ShizukuPermissionHelper.hasApiPermission()) {
-            Log.w(TAG, "skip start: Shizuku not ready")
+            AppLog.w(TAG, "skip start: Shizuku not ready")
             return
         }
         if (isRunning()) return
@@ -46,8 +46,13 @@ object ProxyWatchdog {
         val marker = SystemProxyManager.markerFile(context).absolutePath
         val pidFile = pidFile(context).absolutePath
         val script = buildScript(marker, pidFile)
-        process = ShizukuPermissionHelper.startPrivilegedShell(script)
-        Log.i(TAG, "watchdog started")
+        runCatching {
+            process = ShizukuPermissionHelper.startPrivilegedShell(script)
+            AppLog.i(TAG, "watchdog started")
+        }.onFailure {
+            process = null
+            AppLog.w(TAG, "watchdog start failed", it)
+        }
     }
 
     fun stop(context: Context) {
@@ -63,7 +68,7 @@ object ProxyWatchdog {
             }
             pidFile(context).delete()
         }
-        Log.i(TAG, "watchdog stopped")
+        AppLog.i(TAG, "watchdog stopped")
     }
 
     private fun pidFile(context: Context): File = File(context.filesDir, PID_FILENAME)

@@ -6,7 +6,7 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.SystemProxyManager
@@ -105,7 +105,7 @@ object ProxyHealthJob {
             .build()
         val result = scheduler.schedule(info)
         armedThisProcess = result == JobScheduler.RESULT_SUCCESS
-        Log.i(TAG, "schedule periodic=$PERIOD_MS result=$result")
+        AppLog.i(TAG, "schedule periodic=$PERIOD_MS result=$result")
     }
 
     /**
@@ -127,7 +127,7 @@ object ProxyHealthJob {
             .setPersisted(true)
             .build()
         val result = scheduler.schedule(info)
-        Log.i(TAG, "schedule restart delay=$delayMs result=$result")
+        AppLog.i(TAG, "schedule restart delay=$delayMs result=$result")
     }
 
     fun cancel(context: Context) {
@@ -135,6 +135,6 @@ object ProxyHealthJob {
         val scheduler = context.getSystemService(JobScheduler::class.java)
         scheduler.cancel(JOB_ID)
         scheduler.cancel(RESTART_JOB_ID)
-        Log.i(TAG, "cancelled")
+        AppLog.i(TAG, "cancelled")
     }
 }

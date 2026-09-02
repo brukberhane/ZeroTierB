@@ -12,10 +12,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.data.model.GlobalMode
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.system.BatteryOptimizationHelper
 import com.brukb.zerotier.system.BootRestorePolicy
@@ -23,6 +26,7 @@ import com.brukb.zerotier.system.RestoreTrigger
 import com.brukb.zerotier.system.ShizukuPermissionHelper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val vpnConsentLauncher = registerForActivityResult(
@@ -131,6 +135,19 @@ class MainActivity : ComponentActivity() {
         runCatching {
             startActivity(BatteryOptimizationHelper.openSettingsIntent())
         }.onFailure { Log.w(TAG, "battery settings page failed", it) }
+    }
+
+    fun exportAppLogs() {
+        val dest = File(cacheDir, "log-export/zerotierb-logs.txt")
+        AppLog.copyForShare(dest)
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", dest)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "ZerotierB logs")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, getString(R.string.export_logs_chooser)))
     }
 
     private fun requestNotificationPermission() {

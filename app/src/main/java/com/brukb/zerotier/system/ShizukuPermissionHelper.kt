@@ -2,7 +2,7 @@ package com.brukb.zerotier.system
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
@@ -81,7 +81,7 @@ object ShizukuPermissionHelper {
                     android.Manifest.permission.WRITE_SECURE_SETTINGS,
                 ) == PackageManager.PERMISSION_GRANTED
                 check(granted) { "pm grant succeeded but permission still missing" }
-                Log.i(TAG, "WRITE_SECURE_SETTINGS granted via Shizuku")
+                AppLog.i(TAG, "WRITE_SECURE_SETTINGS granted via Shizuku")
                 Unit
             }
         }

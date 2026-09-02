@@ -41,6 +41,7 @@ fun SettingsBottomSheet(
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
     dnsFailOpen: Boolean,
+    verboseFileLog: Boolean,
     batteryUnrestricted: Boolean,
     linkDebounceSec: Int,
     showGrantHint: Boolean,
@@ -51,6 +52,8 @@ fun SettingsBottomSheet(
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
     onDnsFailOpen: (Boolean) -> Unit,
+    onVerboseFileLog: (Boolean) -> Unit,
+    onExportLogs: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onOpenLinks: () -> Unit,
@@ -169,6 +172,19 @@ fun SettingsBottomSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    SettingsSwitchRow(
+                        label = stringResource(R.string.verbose_file_log_title),
+                        checked = verboseFileLog,
+                        onCheckedChange = onVerboseFileLog,
+                    )
+                    Text(
+                        stringResource(R.string.verbose_file_log_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = onExportLogs) {
+                        Text(stringResource(R.string.export_logs))
+                    }
                     Text(
                         stringResource(R.string.settings_debounce_summary, linkDebounceSec),
                         style = MaterialTheme.typography.bodyMedium,

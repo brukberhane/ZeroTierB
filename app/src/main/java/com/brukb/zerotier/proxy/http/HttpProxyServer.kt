@@ -1,6 +1,6 @@
 package com.brukb.zerotier.proxy.http
 
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.proxy.IpPrefix
 import com.brukb.zerotier.proxy.ProxyConnection
 import com.brukb.zerotier.proxy.ProxyDebugLog
@@ -70,13 +70,13 @@ class HttpProxyServer(
                                 dnsResolver,
                             ).handle()
                         }.onFailure {
-                            Log.w(TAG, "session failed", it)
+                            AppLog.w(TAG, "session failed", it)
                             runCatching { client.close() }
                         }
                     }
                 }.onFailure {
                     if (running.get()) {
-                        Log.w(TAG, "accept failed", it)
+                        AppLog.w(TAG, "accept failed", it)
                         if (running.compareAndSet(true, false)) {
                             onDied()
                         }
@@ -84,7 +84,7 @@ class HttpProxyServer(
                 }
             }
         }
-        Log.i(TAG, "HTTP proxy listening on 127.0.0.1:$actualPort")
+        AppLog.i(TAG, "HTTP proxy listening on 127.0.0.1:$actualPort")
         ProxyDebugLog.i("listen 127.0.0.1:$actualPort")
     }
 
@@ -94,7 +94,7 @@ class HttpProxyServer(
         runCatching { serverSocket?.close() }
         serverSocket = null
         if (activeServer === this) activeServer = null
-        Log.i(TAG, "HTTP proxy stopped")
+        AppLog.i(TAG, "HTTP proxy stopped")
     }
 
     companion object {
@@ -131,7 +131,7 @@ class HttpProxySession(
             val headers = headerLines.subList(1, headerLines.size).takeWhile { it.isNotEmpty() }
             val ua = headers.firstOrNull { it.startsWith("User-Agent:", ignoreCase = true) }
                 ?.substringAfter(':')?.trim() ?: "-"
-            Log.i(TAG, "request $method $target")
+            AppLog.i(TAG, "request $method $target")
             if (method.equals("CONNECT", ignoreCase = true)) {
                 handleConnect(target, input, ua)
                 return
@@ -175,8 +175,9 @@ class HttpProxySession(
         val remote = try {
             openConnection(resolved)
         } catch (e: Exception) {
-            Log.w(TAG, "connect failed $host:$port", e)
+            AppLog.w(TAG, "connect failed $host:$port", e)
             ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${resolved.decision.useZeroTier} err=${e.message}")
+            ProxyDebugLog.w("reply CONNECT 502 host=$host port=$port")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return
         }
@@ -209,7 +210,7 @@ class HttpProxySession(
         val remote = try {
             openConnection(resolved)
         } catch (e: Exception) {
-            Log.w(TAG, "connect failed $host:$port", e)
+            AppLog.w(TAG, "connect failed $host:$port", e)
             ProxyDebugLog.w("connect FAIL host=$host port=$port via=zt=${resolved.decision.useZeroTier} err=${e.message}")
             writeResponse(client.getOutputStream(), 502, "Bad Gateway")
             return true
@@ -250,7 +251,7 @@ class HttpProxySession(
         }
 
         if (contentLength > 0 && !pumpBytes(input, output, contentLength)) {
-            Log.w(TAG, "request body truncated ($contentLength bytes expected)")
+            AppLog.w(TAG, "request body truncated ($contentLength bytes expected)")
             remote.close()
             return false
         }
@@ -264,7 +265,7 @@ class HttpProxySession(
             return true
         }
         val statusLine = String(responseHeaders, Charsets.ISO_8859_1).split("\r\n").firstOrNull().orEmpty()
-        Log.i(TAG, "response $statusLine")
+        AppLog.i(TAG, "response $statusLine")
         ProxyDebugLog.i("reply host=$host port=$port status=$statusLine")
         clientOut.write(responseHeaders)
         clientOut.flush()
@@ -310,7 +311,7 @@ class HttpProxySession(
             val netId = decision.networkId ?: 0L
             val online = ZeroTierNative.zts_node_is_online()
             val ready = if (netId != 0L) ZeroTierNative.zts_net_transport_is_ready(netId) else -1
-            Log.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
+            AppLog.i(TAG, "zt connect $host:$port nodeOnline=$online transportReady=$ready")
             val ip = ztConnectAddress(target)
                 ?: throw IOException("No ZeroTier address for $host")
             val family = if (ip.contains(':')) {
@@ -408,7 +409,7 @@ class HttpProxySession(
     }
 
     private fun logRoute(host: String, port: Int, decision: RouteDecision) {
-        Log.i(
+        AppLog.i(
             TAG,
             "route $host:$port -> useZeroTier=${decision.useZeroTier} " +
                 "net=${decision.networkId?.let { java.lang.Long.toUnsignedString(it, 16) }} " +

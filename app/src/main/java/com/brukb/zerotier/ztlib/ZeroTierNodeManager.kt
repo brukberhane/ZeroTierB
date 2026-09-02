@@ -1,6 +1,6 @@
 package com.brukb.zerotier.ztlib
 
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.zerotier.sockets.ZeroTierEventListener
 import com.zerotier.sockets.ZeroTierNative
@@ -53,11 +53,11 @@ class ZeroTierNodeManager(
         runCatching {
             check(initialized.get()) { "Node not initialized" }
             val result = node.start()
-            Log.i(TAG, "zts_node_start result=$result")
+            AppLog.i(TAG, "zts_node_start result=$result")
             if (result == ZeroTierNative.ZTS_ERR_SERVICE) {
                 // Native node state is process-global; a previous service instance
                 // may have left it running. Reuse instead of tearing down.
-                Log.i(TAG, "node already running — reusing")
+                AppLog.i(TAG, "node already running — reusing")
             } else {
                 check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
             }
@@ -89,7 +89,7 @@ class ZeroTierNodeManager(
             )
             nodeId
         }.onFailure { error ->
-            Log.e(TAG, "start failed", error)
+            AppLog.e(TAG, "start failed", error)
             _state.value = _state.value.copy(lastError = error.message)
         }
     }
@@ -97,7 +97,7 @@ class ZeroTierNodeManager(
     suspend fun stop(): Result<Unit> = withNode {
         runCatching {
             val result = node.stop()
-            Log.i(TAG, "zts_node_stop result=$result")
+            AppLog.i(TAG, "zts_node_stop result=$result")
             networkStatuses.clear()
             _state.value = ZtNodeState()
         }
@@ -114,7 +114,7 @@ class ZeroTierNodeManager(
                     it.allowDefault,
                 )
                 if (settingsResult != ZeroTierNative.ZTS_ERR_OK) {
-                    Log.w(TAG, "zts_net_set_settings failed: $settingsResult — joining anyway")
+                    AppLog.w(TAG, "zts_net_set_settings failed: $settingsResult — joining anyway")
                 }
             }
             updateNetworkStatus(networkId, ZtNetworkStatus.Status.JOINING)
@@ -219,23 +219,23 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_NODE_UP -> {
                 val nodeId = node.id
                 _state.value = _state.value.copy(nodeId = nodeId.takeIf { it != 0L } ?: _state.value.nodeId)
-                Log.i(TAG, "node UP id=${formatNodeId(nodeId)}")
+                AppLog.i(TAG, "node UP id=${formatNodeId(nodeId)}")
             }
             ZeroTierNative.ZTS_EVENT_NODE_ONLINE -> {
                 _state.value = _state.value.copy(isOnline = true, nodeId = node.id)
-                Log.i(TAG, "node ONLINE id=${formatNodeId(node.id)}")
+                AppLog.i(TAG, "node ONLINE id=${formatNodeId(node.id)}")
             }
             ZeroTierNative.ZTS_EVENT_NODE_OFFLINE -> {
                 _state.value = _state.value.copy(isOnline = false)
-                Log.i(TAG, "node OFFLINE")
+                AppLog.i(TAG, "node OFFLINE")
             }
             ZeroTierNative.ZTS_EVENT_NODE_DOWN -> {
                 _state.value = _state.value.copy(isOnline = false)
-                Log.i(TAG, "node DOWN")
+                AppLog.i(TAG, "node DOWN")
             }
             ZeroTierNative.ZTS_EVENT_NODE_FATAL_ERROR -> {
                 _state.value = _state.value.copy(lastError = "Fatal node error")
-                Log.e(TAG, "node FATAL")
+                AppLog.e(TAG, "node FATAL")
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_OK,
             ZeroTierNative.ZTS_EVENT_NETWORK_READY_IP4,
@@ -249,27 +249,27 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_ADDR_REMOVED_IP4,
             ZeroTierNative.ZTS_EVENT_ADDR_REMOVED_IP6,
             -> {
-                Log.i(TAG, "net event=$eventCode id=${formatNodeId(id)}")
+                AppLog.i(TAG, "net event=$eventCode id=${formatNodeId(id)}")
                 refreshNetworkInfoAsync(id)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_REQ_CONFIG -> {
-                Log.i(TAG, "net REQ_CONFIG ${formatNodeId(id)}")
+                AppLog.i(TAG, "net REQ_CONFIG ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.REQUESTING_CONFIG)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_ACCESS_DENIED -> {
-                Log.i(TAG, "net ACCESS_DENIED ${formatNodeId(id)}")
+                AppLog.i(TAG, "net ACCESS_DENIED ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.ACCESS_DENIED)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_NOT_FOUND -> {
-                Log.i(TAG, "net NOT_FOUND ${formatNodeId(id)}")
+                AppLog.i(TAG, "net NOT_FOUND ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.NOT_FOUND)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_CLIENT_TOO_OLD -> {
-                Log.i(TAG, "net CLIENT_TOO_OLD ${formatNodeId(id)}")
+                AppLog.i(TAG, "net CLIENT_TOO_OLD ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.CLIENT_TOO_OLD)
             }
             ZeroTierNative.ZTS_EVENT_NETWORK_DOWN -> {
-                Log.i(TAG, "net DOWN ${formatNodeId(id)}")
+                AppLog.i(TAG, "net DOWN ${formatNodeId(id)}")
                 updateNetworkStatus(id, ZtNetworkStatus.Status.DOWN)
             }
             ZeroTierNative.ZTS_EVENT_PEER_DIRECT,
@@ -292,7 +292,7 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_PEER_PATH_DEAD -> "PATH_DEAD"
             else -> eventCode.toString()
         }
-        Log.i(TAG, "peer $kind ${formatNodeId(peerId)}")
+        AppLog.i(TAG, "peer $kind ${formatNodeId(peerId)}")
         if (eventCode == ZeroTierNative.ZTS_EVENT_PEER_UNREACHABLE ||
             eventCode == ZeroTierNative.ZTS_EVENT_PEER_PATH_DEAD
         ) {
@@ -301,15 +301,15 @@ class ZeroTierNodeManager(
         scope.launch {
             runCatching {
                 val paths = ZtNetworkQuery.queryPathCount(peerId)
-                Log.i(TAG, "peer ${formatNodeId(peerId)} paths=$paths")
-            }.onFailure { Log.w(TAG, "path count failed for ${formatNodeId(peerId)}", it) }
+                AppLog.i(TAG, "peer ${formatNodeId(peerId)} paths=$paths")
+            }.onFailure { AppLog.w(TAG, "path count failed for ${formatNodeId(peerId)}", it) }
         }
     }
 
     private fun refreshNetworkInfoAsync(networkId: Long) {
         scope.launch {
             runCatching { refreshNetworkInfo(networkId) }
-                .onFailure { Log.w(TAG, "refreshNetworkInfo failed for $networkId", it) }
+                .onFailure { AppLog.w(TAG, "refreshNetworkInfo failed for $networkId", it) }
         }
     }
 

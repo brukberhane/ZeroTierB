@@ -1,7 +1,7 @@
 package com.brukb.zerotier
 
 import android.app.Application
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.connection.ConnectionOrchestrator
 import com.brukb.zerotier.data.AppDatabase
 import com.brukb.zerotier.data.AppPreferences
@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 class ZerotierBApplication : Application() {
     lateinit var database: AppDatabase
@@ -45,6 +46,8 @@ class ZerotierBApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.install(File(filesDir, "logs"))
+        installCrashLogger()
         registerShizukuListeners()
         database = AppDatabase.getInstance(this)
         networkRepository = NetworkRepository(database.networkDao())
@@ -65,6 +68,9 @@ class ZerotierBApplication : Application() {
             scope = appScope,
         )
         appScope.launch {
+            preferences.verboseFileLog.collect { AppLog.verbose = it }
+        }
+        appScope.launch {
             networkRepository.migrateStoredNetworkIds()
             preferences.migrateGlobalModeIfNeeded()
             linkProfileRepository.seedOther()
@@ -77,16 +83,21 @@ class ZerotierBApplication : Application() {
                 val port = SystemProxyManager.parseLoopbackPort(current)
                     ?: lastPort.takeIf { it > 0 && SystemProxyManager.isOurLoopback(current, lastPort) }
                 val listenAlive = port?.let { SystemProxyManager.probeListen(it) }
-                if (SystemProxyManager.shouldClearStale(
-                        current,
-                        saved,
-                        lastPort,
-                        mode == GlobalMode.PROXY,
-                        listenAlive,
-                    )
-                ) {
+                val clear = SystemProxyManager.shouldClearStale(
+                    current,
+                    saved,
+                    lastPort,
+                    mode == GlobalMode.PROXY,
+                    listenAlive,
+                )
+                AppLog.i(
+                    TAG,
+                    "proxy-boot current=$current saved=$saved lastPort=$lastPort mode=$mode " +
+                        "listenAlive=$listenAlive clear=$clear",
+                )
+                if (clear) {
                     mgr.disable()
-                    Log.i(TAG, "Cleared stale system proxy (mode=$mode listenAlive=$listenAlive)")
+                    AppLog.i(TAG, "Cleared stale system proxy (mode=$mode listenAlive=$listenAlive)")
                 }
                 if (mode == GlobalMode.OFF) {
                     ProxyHealthJob.cancel(this@ZerotierBApplication)
@@ -101,7 +112,7 @@ class ZerotierBApplication : Application() {
             Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
                 if (requestCode != ShizukuPermissionHelper.REQUEST_CODE) return@addRequestPermissionResultListener
                 if (grantResult != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    Log.w(TAG, "Shizuku permission denied")
+                    AppLog.w(TAG, "Shizuku permission denied")
                     return@addRequestPermissionResultListener
                 }
                 appScope.launch {
@@ -110,10 +121,10 @@ class ZerotierBApplication : Application() {
                             orchestrator.invalidateAppliedPlan()
                             orchestrator.refresh()
                         }
-                        .onFailure { Log.w(TAG, "grant after Shizuku permission failed", it) }
+                        .onFailure { AppLog.w(TAG, "grant after Shizuku permission failed", it) }
                 }
             }
-        }.onFailure { Log.w(TAG, "Shizuku listener registration failed", it) }
+        }.onFailure { AppLog.w(TAG, "Shizuku listener registration failed", it) }
         val binderListener = Shizuku.OnBinderReceivedListener {
             appScope.launch {
                 if (!preferences.privilegedWatchdogEnabled.first()) return@launch
@@ -122,7 +133,20 @@ class ZerotierBApplication : Application() {
             }
         }
         runCatching { Shizuku.addBinderReceivedListenerSticky(binderListener) }
-            .onFailure { Log.w(TAG, "Shizuku binder listener not registered", it) }
+            .onFailure { AppLog.w(TAG, "Shizuku binder listener not registered", it) }
+        runCatching {
+            Shizuku.addBinderDeadListener {
+                AppLog.w(TAG, "Shizuku binder died")
+            }
+        }.onFailure { AppLog.w(TAG, "Shizuku binder-dead listener not registered", it) }
+    }
+
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            AppLog.e(TAG, "uncaught on ${thread.name}", error)
+            previous?.uncaughtException(thread, error)
+        }
     }
 
     companion object {

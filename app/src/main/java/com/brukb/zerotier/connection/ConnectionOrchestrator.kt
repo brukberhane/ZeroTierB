@@ -3,7 +3,7 @@ package com.brukb.zerotier.connection
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.VpnService
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
@@ -109,10 +109,10 @@ class ConnectionOrchestrator(
 
     private suspend fun applyLocked(plan: RuntimePlan) {
         if (plan == lastApplied && runtimeMatches(plan)) {
-            Log.i(TAG, "plan unchanged: ${plan.reason}")
+            AppLog.i(TAG, "plan unchanged: ${plan.reason}")
             return
         }
-        Log.i(TAG, "apply ${plan.runtime}: ${plan.reason}")
+        AppLog.i(TAG, "apply ${plan.runtime}: ${plan.reason}")
         _state.value = _state.value.copy(isApplying = true, plan = plan)
         try {
             when (plan.runtime) {
@@ -125,7 +125,7 @@ class ConnectionOrchestrator(
         } catch (e: Exception) {
             // lastApplied intentionally left stale: the next refresh retries
             // instead of no-oping on a plan that never became reality.
-            Log.e(TAG, "apply failed: ${plan.reason}", e)
+            AppLog.e(TAG, "apply failed: ${plan.reason}", e)
             _state.value = _state.value.copy(
                 isApplying = false,
                 lastError = e.message ?: e.javaClass.simpleName,
@@ -158,7 +158,7 @@ class ConnectionOrchestrator(
         awaitUdpPortReleased(VPN_UDP_PORT)
         val proxyRunning = ProxyModeService.state.value.isRunning
         if (proxyJoinSetRequiresRestart(proxyRunning, lastApplied?.joinNetworkIds, plan.joinNetworkIds)) {
-            Log.i(TAG, "proxy join set changed — restarting")
+            AppLog.i(TAG, "proxy join set changed — restarting")
             stopProxyStack()
             awaitUdpPortReleased(LIBZT_UDP_PORT)
         }
@@ -197,6 +197,12 @@ class ConnectionOrchestrator(
 
     private suspend fun stopProxyStack() {
         if (!ProxyModeService.stopAndAwait(context)) {
+            val st = ProxyModeService.state.value
+            AppLog.e(
+                TAG,
+                "Proxy did not stop in time running=${st.isRunning} startRequested=" +
+                    "${ProxyModeService.startRequested} status=${st.statusMessage}",
+            )
             throw IllegalStateException("Proxy did not stop in time — aborting swap")
         }
     }
@@ -231,7 +237,7 @@ class ConnectionOrchestrator(
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (isUdpPortFree(port)) {
-                Log.i(TAG, "UDP port $port free")
+                AppLog.i(TAG, "UDP port $port free")
                 return
             }
             delay(200)

@@ -12,7 +12,7 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import androidx.core.app.NotificationCompat
 import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
@@ -125,7 +125,7 @@ class ZerotierBVpnService :
                     return START_STICKY
                 }
                 if (isStartSuperseded(startToken)) {
-                    Log.i(TAG, "Start superseded by stop — not starting node")
+                    AppLog.i(TAG, "Start superseded by stop — not starting node")
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf(startId)
                     return START_NOT_STICKY
@@ -136,7 +136,7 @@ class ZerotierBVpnService :
                         soTimeout = 1000
                         bind(InetSocketAddress(InetAddress.getByName("0.0.0.0"), 9994))
                     }
-                    Log.i(TAG, "UDP bound localPort=${socket.localPort} ipv4=0.0.0.0")
+                    AppLog.i(TAG, "UDP bound localPort=${socket.localPort} ipv4=0.0.0.0")
                     if (!protect(socket)) {
                         markStopped()
                         updateState {
@@ -189,7 +189,7 @@ class ZerotierBVpnService :
                     udpThread = Thread(udp, "UDP Listen Thread").also { it.start() }
                     refreshJoinedNetworks()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Start failed", e)
+                    AppLog.e(TAG, "Start failed", e)
                     updateState {
                         copy(
                             statusMessage = e.message ?: "Start failed",
@@ -227,13 +227,13 @@ class ZerotierBVpnService :
             socket.send(java.net.DatagramPacket(packetData, packetData.size, remoteAddr))
             0
         } catch (e: Exception) {
-            Log.e(TAG, "UDP send failed to $remoteAddr: ${e.message}")
+            AppLog.e(TAG, "UDP send failed to $remoteAddr: ${e.message}")
             -1
         }
     }
 
     override fun onEvent(event: Event) {
-        Log.i(TAG, "ZT event: $event")
+        AppLog.i(TAG, "ZT event: $event")
         when (event) {
             Event.EVENT_ONLINE -> {
                 updateState {
@@ -268,7 +268,7 @@ class ZerotierBVpnService :
     }
 
     override fun onTrace(message: String) {
-        Log.v(TAG, message)
+        AppLog.v(TAG, message)
     }
 
     override fun onNetworkConfigurationUpdated(
@@ -276,7 +276,7 @@ class ZerotierBVpnService :
         operation: VirtualNetworkConfigOperation,
         config: VirtualNetworkConfig,
     ): Int {
-        Log.i(
+        AppLog.i(
             TAG,
             "Network config op=$operation id=${StringUtils.networkIdToString(networkId)} " +
                 "status=${config.status} name=${config.name}",
@@ -299,7 +299,7 @@ class ZerotierBVpnService :
                 virtualNetworkConfigs[networkId] = config
                 scope.launch {
                     if (previous == null || previous != config) {
-                        Log.i(TAG, "Network config changed for ${StringUtils.networkIdToString(networkId)}, rebuilding VPN")
+                        AppLog.i(TAG, "Network config changed for ${StringUtils.networkIdToString(networkId)}, rebuilding VPN")
                         rebuildVpn()
                     }
                     publishNetworkStatuses()
@@ -391,7 +391,7 @@ class ZerotierBVpnService :
                 val result = ztNode.processBackgroundTasks(now, newDeadline)
                 applyDeadline(newDeadline[0])
                 if (result != ResultCode.RESULT_OK) {
-                    Log.e(TAG, "processBackgroundTasks failed: $result")
+                    AppLog.e(TAG, "processBackgroundTasks failed: $result")
                     return
                 }
             }
@@ -401,7 +401,7 @@ class ZerotierBVpnService :
     }
 
     override fun run() {
-        Log.d(TAG, "ZeroTier background thread started")
+        AppLog.d(TAG, "ZeroTier background thread started")
         while (!Thread.currentThread().isInterrupted) {
             try {
                 val taskDeadline = synchronized(this) { nextBackgroundTaskDeadline }
@@ -416,10 +416,10 @@ class ZerotierBVpnService :
             } catch (_: InterruptedException) {
                 break
             } catch (e: Exception) {
-                Log.e(TAG, "Background thread error", e)
+                AppLog.e(TAG, "Background thread error", e)
             }
         }
-        Log.d(TAG, "ZeroTier background thread ended")
+        AppLog.d(TAG, "ZeroTier background thread ended")
     }
 
     fun shutdown() {
@@ -493,7 +493,7 @@ class ZerotierBVpnService :
         val normalized = ZerotierBNetwork.normalizeNetworkId(networkIdHex)
         allowedVpnNetworkId?.let { allowed ->
             if (ZerotierBNetwork.normalizeNetworkId(allowed) != normalized) {
-                Log.i(TAG, "skip join $normalized — single-net VPN is ${ZerotierBNetwork.normalizeNetworkId(allowed)}")
+                AppLog.i(TAG, "skip join $normalized — single-net VPN is ${ZerotierBNetwork.normalizeNetworkId(allowed)}")
                 return
             }
         }
@@ -508,16 +508,16 @@ class ZerotierBVpnService :
     }
 
     private fun joinNetworkInternal(networkId: Long) {
-        Log.i(TAG, "Joining network ${StringUtils.networkIdToString(networkId)}")
+        AppLog.i(TAG, "Joining network ${StringUtils.networkIdToString(networkId)}")
         synchronized(nodeLock) {
             val ztNode = node
             if (ztNode == null) {
-                Log.e(TAG, "join failed: node not running")
+                AppLog.e(TAG, "join failed: node not running")
                 return
             }
             val result = ztNode.join(networkId)
             if (result != ResultCode.RESULT_OK) {
-                Log.e(TAG, "join failed for ${StringUtils.networkIdToString(networkId)}: $result")
+                AppLog.e(TAG, "join failed for ${StringUtils.networkIdToString(networkId)}: $result")
             } else {
                 packetScheduler?.registerNetwork(networkId)
             }
@@ -632,14 +632,14 @@ class ZerotierBVpnService :
                 else -> "No active network addresses"
             }
             updateState { copy(statusMessage = statusMessage, overlappingRoutes = emptyList()) }
-            Log.i(TAG, "Skipping VPN establish: no addresses ($statusMessage)")
+            AppLog.i(TAG, "Skipping VPN establish: no addresses ($statusMessage)")
             return@withLock
         }
 
         try {
             builder.addRoute(InetAddress.getByName("224.0.0.0"), 4)
         } catch (e: Exception) {
-            Log.e(TAG, "Multicast route failed", e)
+            AppLog.e(TAG, "Multicast route failed", e)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -654,7 +654,7 @@ class ZerotierBVpnService :
         val newSocket = try {
             builder.establish()
         } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "VPN establish failed: ${e.message}", e)
+            AppLog.e(TAG, "VPN establish failed: ${e.message}", e)
             updateState { copy(statusMessage = "VPN setup failed: ${e.message}") }
             return@withLock
         }
@@ -674,7 +674,7 @@ class ZerotierBVpnService :
                 lastUnderlyingNetworkHandle = underlying.first().networkHandle
             }
         } catch (e: Exception) {
-            Log.w(TAG, "setUnderlyingNetworks failed: ${e.message}")
+            AppLog.w(TAG, "setUnderlyingNetworks failed: ${e.message}")
         }
         val newIn = FileInputStream(newSocket.fileDescriptor)
         val newOut = FileOutputStream(newSocket.fileDescriptor)
@@ -690,17 +690,17 @@ class ZerotierBVpnService :
         try {
             oldOut?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "Error closing old TUN out: ${e.message}")
+            AppLog.w(TAG, "Error closing old TUN out: ${e.message}")
         }
         try {
             oldIn?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "Error closing old TUN in: ${e.message}")
+            AppLog.w(TAG, "Error closing old TUN in: ${e.message}")
         }
         try {
             oldSocket?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "Error closing old VPN socket: ${e.message}")
+            AppLog.w(TAG, "Error closing old VPN socket: ${e.message}")
         }
         adapter.startThreads()
         updateState {
@@ -734,7 +734,7 @@ class ZerotierBVpnService :
                 node.multicastSubscribe(networkId, group)
             }
             if (result != ResultCode.RESULT_OK) {
-                Log.e(TAG, "multicastSubscribe failed: $result")
+                AppLog.e(TAG, "multicastSubscribe failed: $result")
             }
         }
     }
@@ -745,7 +745,7 @@ class ZerotierBVpnService :
             outStream?.close()
             vpnSocket?.close()
         } catch (e: Exception) {
-            Log.e(TAG, "Error closing VPN socket", e)
+            AppLog.e(TAG, "Error closing VPN socket", e)
         }
         inStream = null
         outStream = null
@@ -907,7 +907,7 @@ class ZerotierBVpnService :
                 true
             }
             if (stopped == null) {
-                Log.w(TAG, "VPN stop timed out after ${timeoutMs}ms")
+                AppLog.w(TAG, "VPN stop timed out after ${timeoutMs}ms")
             }
             return stopped != null
         }

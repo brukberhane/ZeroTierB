@@ -3,7 +3,7 @@ package com.brukb.zerotier.system
 import android.content.Context
 import android.net.ConnectivityManager
 import android.telephony.SubscriptionManager
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.connection.ConnectionOrchestrator
 import com.brukb.zerotier.connection.DataSubscriptionIds
 import com.brukb.zerotier.connection.LinkDebouncer
@@ -52,7 +52,7 @@ class LinkObserver(
             registered = true
             debouncer.trigger()
         }.onFailure {
-            Log.w(TAG, "registerDefaultNetworkCallback failed: ${it.message}")
+            AppLog.w(TAG, "registerDefaultNetworkCallback failed: ${it.message}")
         }
     }
 
@@ -61,7 +61,7 @@ class LinkObserver(
         runCatching {
             connectivityManager.unregisterNetworkCallback(callback)
         }.onFailure {
-            Log.w(TAG, "unregisterNetworkCallback failed: ${it.message}")
+            AppLog.w(TAG, "unregisterNetworkCallback failed: ${it.message}")
         }
         registered = false
         scope.launch { debouncer.cancel() }

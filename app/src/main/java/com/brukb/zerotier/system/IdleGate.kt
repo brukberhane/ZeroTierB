@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.PowerManager
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 
 class IdleGate(
     private val context: Context,
@@ -26,7 +26,7 @@ class IdleGate(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val allow = allowPeriodicWork
-            Log.i(TAG, "idle gate ${intent?.action} interactive=$isInteractive idle=$isDeviceIdle allow=$allow")
+            AppLog.i(TAG, "idle gate ${intent?.action} interactive=$isInteractive idle=$isDeviceIdle allow=$allow")
             onChanged(allow, isDeviceIdle)
         }
     }

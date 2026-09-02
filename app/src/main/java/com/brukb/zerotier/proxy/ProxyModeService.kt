@@ -11,7 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
-import android.util.Log
+import com.brukb.zerotier.log.AppLog
 import androidx.core.app.NotificationCompat
 import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
@@ -93,13 +93,19 @@ class ProxyModeService : Service() {
         scope.launch {
             (application as ZerotierBApplication).preferences.dnsFailOpen.collect { open ->
                 dnsResolver.failOpen = open
-                Log.i(TAG, "dns failOpen=$open")
+                AppLog.i(TAG, "dns failOpen=$open")
             }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        AppLog.i(
+            TAG,
+            "onStartCommand action=${intent?.action} flags=$flags startId=$startId " +
+                "running=${_state.value.isRunning} startRequested=$startRequested",
+        )
         if (intent?.action == ACTION_STOP) {
+            AppLog.i(TAG, "STOP received")
             scope.launch {
                 startStopMutex.withLock { stopProxy() }
             }
@@ -165,7 +171,7 @@ class ProxyModeService : Service() {
      */
     private fun handleFgsTimeout(reason: String) {
         if (!fgsTimeoutHandled.compareAndSet(false, true)) return
-        Log.w(TAG, reason)
+        AppLog.w(TAG, reason)
         failClosedAndStop(reason)
         val app = application as ZerotierBApplication
         app.applicationScope.launch {
@@ -181,6 +187,11 @@ class ProxyModeService : Service() {
     }
 
     override fun onDestroy() {
+        AppLog.i(
+            TAG,
+            "onDestroy running=${_state.value.isRunning} port=${_state.value.httpProxyPort} " +
+                "listening=${httpProxy?.isListening} nodeStarted=$nodeStarted",
+        )
         runCatching { idleGate.unregister() }
         stopHealthLoop()
         ProxyWatchdog.stop(this)
@@ -196,7 +207,7 @@ class ProxyModeService : Service() {
 
     private suspend fun startProxy(forceDebug: Boolean, joinNetworkIds: List<String>? = null, startToken: Long = 0L) {
         if (isStartSuperseded(startToken)) {
-            Log.i(TAG, "Start superseded by stop — not starting proxy")
+            AppLog.i(TAG, "Start superseded by stop — not starting proxy")
             updateState { copy(isRunning = false, statusMessage = "Stopped", nodeLifecycle = NodeLifecycleStatus.STOPPED) }
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -235,7 +246,7 @@ class ProxyModeService : Service() {
         startNetworkStatusPump()
         nodeManager.start(shouldAbort = { isStartSuperseded(startToken) }).onFailure {
             if (isStartSuperseded(startToken)) {
-                Log.i(TAG, "Node start aborted by stop")
+                AppLog.i(TAG, "Node start aborted by stop")
                 runCatching { nodeManager.stop() }
                 finishSupersededStart()
                 return
@@ -245,7 +256,7 @@ class ProxyModeService : Service() {
         }
         nodeStarted = true
         if (isStartSuperseded(startToken)) {
-            Log.i(TAG, "Start superseded after node start — stopping")
+            AppLog.i(TAG, "Start superseded after node start — stopping")
             stopProxy()
             return
         }
@@ -258,7 +269,7 @@ class ProxyModeService : Service() {
                 nodeLifecycle = ztNodeStateToLifecycle(nodeManager.state.value, pausedDoze = false),
             )
         }
-        Log.i(TAG, "Node started: $nodeId online=${nodeManager.state.value.isOnline}")
+        AppLog.i(TAG, "Node started: $nodeId online=${nodeManager.state.value.isOnline}")
 
         networkConfigs.clear()
         routeResolver.clear()
@@ -280,16 +291,16 @@ class ProxyModeService : Service() {
                 statusMessage = "Proxy on 127.0.0.1:$boundPort",
             )
         }
-        Log.i(TAG, "HTTP proxy on 127.0.0.1:$boundPort")
+        AppLog.i(TAG, "HTTP proxy on 127.0.0.1:$boundPort")
 
         systemProxyManager.enable(boundPort)
             .onSuccess {
                 updateState { copy(systemProxyActive = true, hasSecureSettingsPermission = true) }
-                Log.i(TAG, "System proxy set to 127.0.0.1:$boundPort")
+                AppLog.i(TAG, "System proxy set to 127.0.0.1:$boundPort")
             }
             .onFailure {
                 updateState { copy(systemProxyActive = false) }
-                Log.w(TAG, "System proxy not set: ${it.message}")
+                AppLog.w(TAG, "System proxy not set: ${it.message}")
             }
 
         startHealthLoop()
@@ -298,7 +309,7 @@ class ProxyModeService : Service() {
 
         for (network in enabledNetworks) {
             if (isStartSuperseded(startToken)) {
-                Log.i(TAG, "Start superseded by stop during join — aborting")
+                AppLog.i(TAG, "Start superseded by stop during join — aborting")
                 stopProxy()
                 return
             }
@@ -311,7 +322,7 @@ class ProxyModeService : Service() {
         networkConfigs[networkId] = network
         val joinResult = nodeManager.join(networkId, network)
         if (joinResult.isFailure) {
-            Log.w(TAG, "Join failed for ${network.networkId}: ${joinResult.exceptionOrNull()?.message}")
+            AppLog.w(TAG, "Join failed for ${network.networkId}: ${joinResult.exceptionOrNull()?.message}")
             return
         }
         val readyResult = nodeManager.waitForNetworkReady(
@@ -321,11 +332,11 @@ class ProxyModeService : Service() {
         )
         if (isStartSuperseded(startToken)) return
         if (readyResult.isFailure) {
-            Log.w(TAG, "Network not ready ${network.networkId}: ${readyResult.exceptionOrNull()?.message}")
+            AppLog.w(TAG, "Network not ready ${network.networkId}: ${readyResult.exceptionOrNull()?.message}")
             return
         }
         applyNetworkRuntime(network, readyResult.getOrThrow())
-        Log.i(TAG, "Joined ${network.networkId}")
+        AppLog.i(TAG, "Joined ${network.networkId}")
     }
 
     private fun startNetworkStatusPump() {
@@ -406,7 +417,7 @@ class ProxyModeService : Service() {
     }
 
     private fun applyNetworkRuntime(network: ZerotierBNetwork, status: ZtNetworkStatus) {
-        Log.i(
+        AppLog.i(
             TAG,
             "routes ${network.networkId}: assigned=${status.assignedAddresses} managed=${status.routes}",
         )
@@ -419,12 +430,13 @@ class ProxyModeService : Service() {
     }
 
     private suspend fun stopProxy() {
+        AppLog.i(TAG, "stopProxy begin nodeStarted=$nodeStarted pausedDoze=$nodePausedForDoze")
         markStopped()
         updateState { copy(statusMessage = "Stopping...") }
         stopHealthLoop()
         ProxyWatchdog.stop(this)
         systemProxyManager.disable().onFailure {
-            Log.w(TAG, "Failed to restore system proxy: ${it.message}")
+            AppLog.w(TAG, "Failed to restore system proxy: ${it.message}")
         }
         networkStateJob?.cancel()
         networkStateJob = null
@@ -445,11 +457,12 @@ class ProxyModeService : Service() {
         networkConfigs.clear()
         stopForeground(STOP_FOREGROUND_REMOVE)
         updateState { ProxyServiceState(hasSecureSettingsPermission = systemProxyManager.hasPermission()) }
+        AppLog.i(TAG, "stopProxy done")
         stopSelf()
     }
 
     private suspend fun fail(message: String) {
-        Log.e(TAG, message)
+        AppLog.e(TAG, message)
         updateState {
             copy(
                 lastError = message,
@@ -524,7 +537,7 @@ class ProxyModeService : Service() {
         val port = httpProxy?.boundPort ?: 0
         val alive = httpProxy != null && httpProxy?.isListening == true && port > 0 && probeTcp(port)
         if (alive) return
-        Log.w(TAG, "Proxy listen dead; clearing system proxy")
+        AppLog.w(TAG, "Proxy listen dead; clearing system proxy")
         systemProxyManager.disableBlocking()
         httpProxy?.stop()
         httpProxy = null
@@ -547,7 +560,7 @@ class ProxyModeService : Service() {
             startHealthLoop()
             startWatchdogIfEnabled()
         }.onFailure { error ->
-            Log.w(TAG, "Proxy rebind failed: ${error.message}")
+            AppLog.w(TAG, "Proxy rebind failed: ${error.message}")
             notifyProxyDown()
         }
     }
@@ -578,6 +591,10 @@ class ProxyModeService : Service() {
                     backoff = (backoff * 2).coerceAtMost(HEALTH_MAX_BACKOFF_MS)
                     continue
                 }
+                AppLog.w(
+                    TAG,
+                    "health: listen dead port=${http.boundPort} isListening=${http.isListening}",
+                )
                 recoverProxy()
                 backoff = HEALTH_MIN_BACKOFF_MS
             }
@@ -635,7 +652,7 @@ class ProxyModeService : Service() {
 
     private suspend fun pauseNodeForDoze() {
         if (!nodeStarted || nodePausedForDoze) return
-        Log.i(TAG, "Pausing ZeroTier node for Doze")
+        AppLog.i(TAG, "Pausing ZeroTier node for Doze")
         pausedNetworks.clear()
         pausedNetworks.addAll(networkConfigs.values)
         for (network in pausedNetworks) {
@@ -657,13 +674,13 @@ class ProxyModeService : Service() {
 
     private suspend fun resumeNodeFromDoze() {
         if (!nodePausedForDoze) return
-        Log.i(TAG, "Resuming ZeroTier node after Doze")
+        AppLog.i(TAG, "Resuming ZeroTier node after Doze")
         nodeManager.initialize().onFailure {
-            Log.w(TAG, "Node re-init failed: ${it.message}")
+            AppLog.w(TAG, "Node re-init failed: ${it.message}")
         }
         startNetworkStatusPump()
         nodeManager.start(shouldAbort = { !_state.value.isRunning && !nodePausedForDoze }).onFailure {
-            Log.w(TAG, "Node resume failed: ${it.message}")
+            AppLog.w(TAG, "Node resume failed: ${it.message}")
             updateState {
                 copy(
                     statusMessage = "ZeroTier paused (Doze) — resume failed",
@@ -688,7 +705,7 @@ class ProxyModeService : Service() {
     }
 
     private fun failClosedAndStop(reason: String) {
-        Log.w(TAG, reason)
+        AppLog.w(TAG, reason)
         markStopped()
         stopHealthLoop()
         ProxyWatchdog.stop(this)
@@ -798,7 +815,11 @@ class ProxyModeService : Service() {
                 true
             }
             if (stopped == null) {
-                Log.w(TAG, "Proxy stop timed out after ${timeoutMs}ms")
+                AppLog.w(
+                    TAG,
+                    "Proxy stop timed out after ${timeoutMs}ms running=${state.value.isRunning} " +
+                        "inFlight=${inFlightStarts.get()} startRequested=$startRequested",
+                )
             }
             return stopped != null
         }
