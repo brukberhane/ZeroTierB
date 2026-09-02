@@ -70,10 +70,16 @@
     <string name="watchdog_needs_shizuku">Shizuku required</string>
     <string name="pause_doze_title">Pause ZeroTier in Doze</string>
     <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
-    <string name="dns_fail_open_title">DNS fail-open</string>
-    <string name="dns_fail_open_hint">If Private DNS fails, use Wi-Fi or cellular DNS so the proxy still loads sites. Off: Private DNS only — CONNECT fails instead of using the link resolver.</string>
+    <string name="dns_fail_open_title">Extra DNS on failure</string>
+    <string name="dns_fail_open_hint">If system DNS on Wi-Fi or cellular fails, try extra nameservers below. Off: no extra nameservers. ZeroTier DNS still used for matching domains and NXDOMAIN. Extra servers are not used for NXDOMAIN or NODATA.</string>
+    <string name="dns_fallback_title">Fallback DNS servers</string>
+    <string name="dns_fallback_hint">Used when Wi-Fi or cellular DNS times out or errors. IPv4 or IPv6 only. Max %1$d. Not used for NXDOMAIN or NODATA.</string>
+    <string name="dns_fallback_add">Add</string>
+    <string name="dns_fallback_remove">Remove</string>
+    <string name="dns_fallback_invalid">Enter a valid IPv4 or IPv6 address</string>
+    <string name="dns_fallback_max">Maximum %1$d servers</string>
     <string name="verbose_file_log_title">Verbose file log</string>
-    <string name="verbose_file_log_hint">Off: start/stop, errors, DNS failures. On: every CONNECT/DNS line. Rotates at 1 MB × 2. Survives force-stop.</string>
+    <string name="verbose_file_log_hint">Off: start/stop, errors, DNS failures (grep via=netd, via=udp, via=zt-domain, via=zt-nx, dns-udp FAIL, cache-neg). On: every CONNECT/DNS line. Rotates at 1 MB × 2. Survives force-stop.</string>
     <string name="export_logs">Export logs</string>
     <string name="export_logs_chooser">Share ZerotierB logs</string>
     <string name="links_title">Links</string>

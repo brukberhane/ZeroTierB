@@ -31,7 +31,7 @@
 - SOCKS5 BIND/UDP-ASSOCIATE
 - Automated tests
 - libzt stack-level `allowDNS` (no NetworkSettings field in libzt)
-- System DNS 6s NXDOMAIN + negative cache on TikTok CDN hosts while PROXY is up (`Unable to resolve host …: No address associated with hostname`). Separate from CONNECT relay stagnation. Revisit if stutter remains after idle timeout.
+- System DNS 6s NXDOMAIN + negative cache on TikTok CDN hosts while PROXY is up — **fixed**: PROXY now uses netd on physical uplink. Remaining watch: Pi-hole **timeout** with empty fallback list; overlapping LAN prefix still HTTP-via-libzt (deferred).
 
 ## Known issues / watch
 

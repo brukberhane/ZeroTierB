@@ -1,23 +1,28 @@
 package com.brukb.zerotier.proxy.dns
 
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.ProxyDebugLog
 import com.brukb.zerotier.ztlib.ZtNetworkStatus
 import java.net.InetAddress
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 
 class DnsResolver(
     private val uplink: UplinkDnsClient,
     private val elapsedRealtime: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
-    private val networkResolvers = mutableMapOf<Long, NetworkDnsResolver>()
+    private val networkResolvers = mutableMapOf<Long, ZtDnsBackend>()
 
     @Volatile
     var failOpen: Boolean = true
 
-    private var privateFailCount = 0
-    private var skipPrivateUntilElapsed = 0L
+    @Volatile
+    var fallbackServers: List<InetAddress> = emptyList()
+
     private val negativeUntil = mutableMapOf<String, Long>()
+    private val inflight = ConcurrentHashMap<String, CompletableFuture<List<InetAddress>>>()
 
     @Synchronized
     fun updateNetwork(config: ZerotierBNetwork, status: ZtNetworkStatus) {
@@ -37,6 +42,7 @@ class DnsResolver(
             networkId = config.networkIdLong(),
             domain = status.dnsDomain,
             servers = servers,
+            routePriority = config.routePriority,
         )
         ProxyDebugLog.i(
             "dns-cfg net=$netHex domain='${status.dnsDomain}' servers=$servers",
@@ -52,70 +58,127 @@ class DnsResolver(
     fun clear() {
         networkResolvers.clear()
         negativeUntil.clear()
-        privateFailCount = 0
-        skipPrivateUntilElapsed = 0L
+        inflight.clear()
     }
 
     fun resolve(host: String): List<InetAddress> {
-        val normalized = host.trimEnd('.')
-        val t0 = elapsedRealtime()
-        val zt = pickResolver(normalized)
-        val domains = synchronized(this) {
-            networkResolvers.values.joinToString(";") { "'${it.domain}'" }.ifEmpty { "-" }
+        val normalized = host.trimEnd('.').lowercase()
+        inflight[normalized]?.let { return it.get() }
+        val mine = CompletableFuture<List<InetAddress>>()
+        val raced = inflight.putIfAbsent(normalized, mine)
+        if (raced != null) return raced.get()
+        return try {
+            val addrs = resolveOnce(normalized)
+            mine.complete(addrs)
+            addrs
+        } catch (e: Exception) {
+            mine.completeExceptionally(e)
+            throw e
+        } finally {
+            inflight.remove(normalized, mine)
         }
-        if (zt != null && zt.shouldResolve(normalized)) {
-            return try {
-                val addrs = zt.resolve(normalized)
-                val ms = elapsedRealtime() - t0
-                val ips = addrs.mapNotNull { it.hostAddress }.joinToString(",")
-                ProxyDebugLog.i("dns host=$normalized via=zt addrs=[$ips] ms=$ms ztDomains=$domains")
-                addrs
-            } catch (e: Exception) {
-                val ms = elapsedRealtime() - t0
-                ProxyDebugLog.w("dns FAIL host=$normalized via=zt ms=$ms ztDomains=$domains err=${e.message}")
-                emptyList()
-            }
-        }
-        synchronized(this) {
-            val until = negativeUntil[normalized] ?: 0L
-            if (elapsedRealtime() < until) {
-                ProxyDebugLog.w("dns FAIL host=$normalized via=cache-neg ms=${elapsedRealtime() - t0}")
-                return emptyList()
-            }
-        }
-        return resolveUplink(normalized, t0, domains)
     }
 
-    private fun resolveUplink(host: String, t0: Long, domains: String): List<InetAddress> {
-        val privateConfigured = uplink.hasPrivateDns()
-        if (privateConfigured && !shouldSkipPrivate()) {
-            val addrs = runCatching { uplink.lookupPrivate(host, PRIVATE_DNS_TIMEOUT_MS) }
-                .getOrElse { emptyList() }
-            if (addrs.isNotEmpty()) {
-                notePrivateSuccess()
-                logOk(host, "private", addrs, t0, domains)
-                return addrs
+    private fun resolveOnce(normalized: String): List<InetAddress> {
+        val t0 = elapsedRealtime()
+        val domains = synchronized(this) {
+            networkResolvers.values.joinToString(";") { "'${it.domainLabel}'" }.ifEmpty { "-" }
+        }
+        val ztMatch = pickResolver(normalized)
+        if (ztMatch != null && ztMatch.shouldResolve(normalized)) {
+            when (val r = ztMatch.resolve(normalized)) {
+                is DnsLookupResult.Ok -> {
+                    logOk(normalized, "zt-domain", r.addresses, t0, domains)
+                    return r.addresses
+                }
+                is DnsLookupResult.NxDomain, is DnsLookupResult.NoData -> {
+                    rememberNegative(normalized)
+                    logFail(normalized, "zt-domain", t0, domains)
+                    return emptyList()
+                }
+                is DnsLookupResult.Failure -> {
+                    ProxyDebugLog.w(
+                        "dns FAIL host=$normalized via=zt-domain ms=${elapsedRealtime() - t0} " +
+                            "ztDomains=$domains err=${r.reason}",
+                    )
+                }
             }
-            if (notePrivateFailure()) {
-                rememberNegative(host)
-                logFail(host, "private", t0, domains)
+        }
+        if (negativeHit(normalized, t0)) return emptyList()
+
+        when (val netd = uplink.lookupNetd(normalized, NETD_TIMEOUT_MS)) {
+            is DnsLookupResult.Ok -> {
+                logOk(normalized, "netd", netd.addresses, t0, domains)
+                return netd.addresses
+            }
+            is DnsLookupResult.NxDomain -> return ztNxFallback(normalized, t0, domains)
+            is DnsLookupResult.NoData -> {
+                rememberNegative(normalized)
+                logFail(normalized, "netd-nodata", t0, domains)
                 return emptyList()
             }
-        }
-        if (!privateConfigured || failOpen) {
-            val addrs = runCatching { uplink.lookupLink(host, LINK_DNS_TIMEOUT_MS) }
-                .getOrElse { emptyList() }
-            if (addrs.isNotEmpty()) {
-                logOk(host, "link", addrs, t0, domains)
-                return addrs
+            is DnsLookupResult.Failure -> {
+                ProxyDebugLog.w(
+                    "dns FAIL host=$normalized via=netd ms=${elapsedRealtime() - t0} " +
+                        "failOpen=$failOpen ztDomains=$domains err=${netd.reason}",
+                )
             }
-            rememberNegative(host)
-            logFail(host, "link", t0, domains)
-            return emptyList()
+        }
+
+        if (failOpen) {
+            for (server in fallbackServers) {
+                when (val r = uplink.lookupUdp(server, normalized, FALLBACK_DNS_TIMEOUT_MS)) {
+                    is DnsLookupResult.Ok -> {
+                        logOk(normalized, "udp", r.addresses, t0, domains)
+                        return r.addresses
+                    }
+                    is DnsLookupResult.NxDomain -> return ztNxFallback(normalized, t0, domains)
+                    is DnsLookupResult.NoData -> {
+                        rememberNegative(normalized)
+                        logFail(normalized, "udp-nodata", t0, domains)
+                        return emptyList()
+                    }
+                    is DnsLookupResult.Failure -> {
+                        ProxyDebugLog.w(
+                            "dns FAIL host=$normalized via=udp server=${server.hostAddress} " +
+                                "ms=${elapsedRealtime() - t0} err=${r.reason}",
+                        )
+                    }
+                }
+            }
+        }
+
+        logFail(normalized, "uplink", t0, domains)
+        return emptyList()
+    }
+
+    private fun ztNxFallback(host: String, t0: Long, domains: String): List<InetAddress> {
+        val resolvers = synchronized(this) { networkResolvers.values.toList() }
+        for (zt in resolvers) {
+            when (val r = zt.resolve(host)) {
+                is DnsLookupResult.Ok -> {
+                    logOk(host, "zt-nx", r.addresses, t0, domains)
+                    return r.addresses
+                }
+                is DnsLookupResult.NxDomain, is DnsLookupResult.NoData, is DnsLookupResult.Failure -> {
+                    /* try next net */
+                }
+            }
         }
         rememberNegative(host)
-        logFail(host, "private", t0, domains)
+        logFail(host, "zt-nx", t0, domains)
         return emptyList()
+    }
+
+    private fun negativeHit(host: String, t0: Long): Boolean {
+        synchronized(this) {
+            val until = negativeUntil[host] ?: 0L
+            if (elapsedRealtime() < until) {
+                ProxyDebugLog.w("dns FAIL host=$host via=cache-neg ms=${elapsedRealtime() - t0}")
+                return true
+            }
+        }
+        return false
     }
 
     private fun rememberNegative(host: String) {
@@ -146,36 +209,27 @@ class DnsResolver(
     }
 
     @Synchronized
-    private fun shouldSkipPrivate(): Boolean =
-        failOpen && elapsedRealtime() < skipPrivateUntilElapsed
-
-    @Synchronized
-    private fun notePrivateSuccess() {
-        privateFailCount = 0
+    private fun pickResolver(host: String): ZtDnsBackend? {
+        val matches = networkResolvers.values.filter { it.shouldResolve(host) }
+        if (matches.isEmpty()) return null
+        return matches.minWith(
+            compareBy<ZtDnsBackend> { it.routePriority }
+                .thenComparator { a, b ->
+                    java.lang.Long.compareUnsigned(a.networkId, b.networkId)
+                },
+        )
     }
 
-    /** Returns true if fail-closed (caller must not fall back). */
-    @Synchronized
-    private fun notePrivateFailure(): Boolean {
-        privateFailCount++
-        if (failOpen && privateFailCount >= PRIVATE_FAIL_THRESHOLD) {
-            skipPrivateUntilElapsed = elapsedRealtime() + PRIVATE_SKIP_MS
-            ProxyDebugLog.w("dns-private circuit-open skipMs=$PRIVATE_SKIP_MS")
+    @VisibleForTesting
+    internal fun replaceBackendForTest(networkId: Long, backend: ZtDnsBackend) {
+        synchronized(this) {
+            networkResolvers[networkId] = backend
         }
-        return !failOpen
-    }
-
-    @Synchronized
-    private fun pickResolver(host: String): NetworkDnsResolver? {
-        if (networkResolvers.isEmpty()) return null
-        return networkResolvers.values.firstOrNull { it.shouldResolve(host) }
     }
 
     companion object {
-        const val PRIVATE_DNS_TIMEOUT_MS = 4_000
-        const val LINK_DNS_TIMEOUT_MS = 2_000
-        const val PRIVATE_FAIL_THRESHOLD = 2
-        const val PRIVATE_SKIP_MS = 30_000L
+        const val NETD_TIMEOUT_MS = 4_000
+        const val FALLBACK_DNS_TIMEOUT_MS = 2_000
         const val NEGATIVE_CACHE_MS = 5_000L
     }
 }

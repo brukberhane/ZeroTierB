@@ -96,6 +96,14 @@ class ProxyModeService : Service() {
                 AppLog.i(TAG, "dns failOpen=$open")
             }
         }
+        scope.launch {
+            (application as ZerotierBApplication).preferences.dnsFallbackServers.collect { list ->
+                dnsResolver.fallbackServers = list.mapNotNull {
+                    runCatching { java.net.InetAddress.getByName(it) }.getOrNull()
+                }
+                AppLog.i(TAG, "dns fallbackServers=$list")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

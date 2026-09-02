@@ -49,6 +49,11 @@ These came from real bugs; preserve the patterns.
 - Proxy port is ephemeral: `adb shell settings get global http_proxy` → `adb forward tcp:PORT tcp:PORT` → `curl --proxy http://127.0.0.1:PORT …`.
 - **`curl: (52) Empty reply` in ~2 ms** = the forwarded port is stale (adbd can't connect), re-read the setting — not a proxy bug. A 10 s hang → 502 = ZT connect failing (see libzt notes).
 - Useful logs: `HttpProxySession` (`route host:port -> useZeroTier=… reason=…`, `zt connect … nodeOnline=… transportReady=…`), `ProxyModeService` (`routes <netid>: assigned=[…] managed=[…]`), `ConnectionOrchestrator` (`apply <runtime>: <reason>`).
+- In-app **Export logs** (Settings) → `zerotierb-logs.txt`. Ring `files/logs/`, survives force-stop. Verbose toggle = every CONNECT/DNS INFO.
+- DNS success: `ZtProxyDbg: dns host=… via=netd|udp|zt-domain|zt-nx addrs=[…]`.
+- DNS fail: `dns FAIL host=… via=netd|udp|zt-nx|cache-neg|uplink`. UDP: `dns-udp FAIL` / `dns-udp bind FAIL`. ZT: `dns-zt FAIL`. Old `dns-link FAIL` is gone.
+- Sep 2 class: homemade DHCP UDP timeouts. Expect `via=netd` now. `cache-neg` only after NxDomain/NoData, not timeouts.
+- curl 502 + `No address for` = empty resolve (NODATA/NXDOMAIN/timeout with no fallbacks).
 - Debug intents: `adb shell am start -n com.brukb.zerotier/.ui.MainActivity --es zerotierb_action <apply_mode|stop_all|start_proxy|stop_proxy|grant_secure_settings> [--es mode vpn|proxy|off|auto]`.
 
 ## Repo layout notes

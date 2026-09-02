@@ -14,6 +14,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -32,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.brukb.zerotier.R
+import com.brukb.zerotier.data.AppPreferences
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +43,7 @@ fun SettingsBottomSheet(
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
     dnsFailOpen: Boolean,
+    dnsFallbackServers: List<String>,
     verboseFileLog: Boolean,
     batteryUnrestricted: Boolean,
     linkDebounceSec: Int,
@@ -52,6 +55,7 @@ fun SettingsBottomSheet(
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
     onDnsFailOpen: (Boolean) -> Unit,
+    onDnsFallbackServers: (List<String>) -> Unit,
     onVerboseFileLog: (Boolean) -> Unit,
     onExportLogs: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
@@ -65,6 +69,11 @@ fun SettingsBottomSheet(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val copiedMessage = stringResource(R.string.copied)
+    var fallbackDraft by remember { mutableStateOf("") }
+    var fallbackError by remember { mutableStateOf<String?>(null) }
+    val maxFallback = AppPreferences.MAX_DNS_FALLBACK_SERVERS
+    val fallbackMaxMessage = stringResource(R.string.dns_fallback_max, maxFallback)
+    val fallbackInvalidMessage = stringResource(R.string.dns_fallback_invalid)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -172,6 +181,73 @@ fun SettingsBottomSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        stringResource(R.string.dns_fallback_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        stringResource(R.string.dns_fallback_hint, maxFallback),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = fallbackDraft,
+                            onValueChange = {
+                                fallbackDraft = it
+                                fallbackError = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text(stringResource(R.string.dns_fallback_title)) },
+                            isError = fallbackError != null,
+                            supportingText = fallbackError?.let { { Text(it) } },
+                        )
+                        TextButton(
+                            onClick = {
+                                val trimmed = fallbackDraft.trim()
+                                when {
+                                    dnsFallbackServers.size >= maxFallback -> {
+                                        fallbackError = fallbackMaxMessage
+                                    }
+                                    AppPreferences.sanitizeDnsFallbackServers(listOf(trimmed)).isEmpty() -> {
+                                        fallbackError = fallbackInvalidMessage
+                                    }
+                                    dnsFallbackServers.contains(trimmed) -> {
+                                        fallbackDraft = ""
+                                    }
+                                    else -> {
+                                        onDnsFallbackServers(dnsFallbackServers + trimmed)
+                                        fallbackDraft = ""
+                                        fallbackError = null
+                                    }
+                                }
+                            },
+                            enabled = fallbackDraft.isNotBlank() && dnsFallbackServers.size < maxFallback,
+                        ) {
+                            Text(stringResource(R.string.dns_fallback_add))
+                        }
+                    }
+                    dnsFallbackServers.forEach { server ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(server, fontFamily = FontFamily.Monospace)
+                            TextButton(
+                                onClick = {
+                                    onDnsFallbackServers(dnsFallbackServers.filter { it != server })
+                                },
+                            ) {
+                                Text(stringResource(R.string.dns_fallback_remove))
+                            }
+                        }
+                    }
                     SettingsSwitchRow(
                         label = stringResource(R.string.verbose_file_log_title),
                         checked = verboseFileLog,

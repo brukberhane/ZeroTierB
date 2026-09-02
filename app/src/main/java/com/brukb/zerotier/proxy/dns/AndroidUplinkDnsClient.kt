@@ -2,145 +2,109 @@ package com.brukb.zerotier.proxy.dns
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
-import android.os.SystemClock
+import android.os.CancellationSignal
+import androidx.annotation.RequiresApi
 import com.brukb.zerotier.proxy.ProxyDebugLog
-import java.io.DataInputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import javax.net.ssl.SNIHostName
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.FutureTask
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
 
 class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
     private val connectivity =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    @Volatile private var cachedDotServers: Pair<String, List<InetAddress>>? = null
+    private val lastUplinkLogSig = AtomicReference<String?>(null)
 
-    override fun hasPrivateDns(): Boolean = privateDnsName(linkProperties()) != null
-
-    override fun lookupPrivate(host: String, timeoutMs: Int): List<InetAddress> {
-        if (timeoutMs <= 0) return emptyList()
-        val network = pickUplink() ?: return emptyList()
-        val lp = connectivity.getLinkProperties(network) ?: return emptyList()
-        val sni = privateDnsName(lp) ?: return emptyList()
-        val deadline = SystemClock.elapsedRealtime() + timeoutMs
-        val servers = dotServers(network, sni, remaining(deadline))
-        if (servers.isEmpty()) {
-            ProxyDebugLog.w("dns-private bootstrap empty sni=$sni host=$host")
-            return emptyList()
-        }
-        for (server in servers) {
-            val remaining = remaining(deadline)
-            if (remaining <= 0) break
-            val addrs = queryDot(network, server, sni, host, remaining)
-            if (addrs.isNotEmpty()) return addrs
-        }
-        return emptyList()
-    }
-
-    override fun lookupLink(host: String, timeoutMs: Int): List<InetAddress> {
-        if (timeoutMs <= 0) return emptyList()
-        val network = pickUplink() ?: return emptyList()
-        val servers = connectivity.getLinkProperties(network)?.dnsServers.orEmpty()
-        if (servers.isEmpty()) return emptyList()
-        val deadline = SystemClock.elapsedRealtime() + timeoutMs
-        for (server in servers.take(2)) {
-            val remaining = remaining(deadline)
-            if (remaining <= 0) break
-            val addrs = queryUdp(network, server, host, remaining)
-            if (addrs.isNotEmpty()) return addrs
-        }
-        return emptyList()
-    }
-
-    private fun dotServers(network: Network, sni: String, timeoutMs: Int): List<InetAddress> {
-        cachedDotServers?.let { (name, ips) ->
-            if (name == sni && ips.isNotEmpty()) return ips
-        }
-        val ips = queryUdp(network, null, sni, timeoutMs)
-        if (ips.isNotEmpty()) {
-            cachedDotServers = sni to ips
-        }
-        return ips
-    }
-
-    private fun queryDot(
-        network: Network,
-        server: InetAddress,
-        sni: String,
-        host: String,
-        timeoutMs: Int,
-    ): List<InetAddress> {
-        if (timeoutMs <= 0) return emptyList()
-        return runCatching {
-            val factory = SSLSocketFactory.getDefault()
-            val socket = factory.createSocket() as SSLSocket
-            try {
-                runCatching { network.bindSocket(socket) }
-                socket.soTimeout = timeoutMs
-                val params = socket.sslParameters
-                params.serverNames = listOf(SNIHostName(sni))
-                params.endpointIdentificationAlgorithm = "HTTPS"
-                socket.sslParameters = params
-                socket.connect(InetSocketAddress(server, DOT_PORT), timeoutMs)
-                socket.startHandshake()
-                val results = mutableListOf<InetAddress>()
-                results += dotQuery(socket, host, DnsMessage.TYPE_A)
-                if (results.isEmpty()) {
-                    results += dotQuery(socket, host, DnsMessage.TYPE_AAAA)
-                }
-                results
-            } finally {
-                runCatching { socket.close() }
-            }
-        }.getOrElse { err ->
-            ProxyDebugLog.w("dns-private FAIL sni=$sni server=$server host=$host err=${err.message}")
-            emptyList()
-        }
-    }
-
-    private fun dotQuery(socket: SSLSocket, host: String, type: Int): List<InetAddress> {
-        val query = DnsMessage.buildQuery(host, type)
-        val out = socket.outputStream
-        out.write(query.size ushr 8)
-        out.write(query.size)
-        out.write(query)
-        out.flush()
-        val input = DataInputStream(socket.inputStream)
-        val length = input.readUnsignedShort()
-        if (length <= 0 || length > 4096) return emptyList()
-        val response = ByteArray(length)
-        input.readFully(response)
-        return DnsMessage.parseAnswers(response, response.size)
-    }
-
-    private fun queryUdp(
-        network: Network,
-        preferredServer: InetAddress?,
-        host: String,
-        timeoutMs: Int,
-    ): List<InetAddress> {
-        if (timeoutMs <= 0) return emptyList()
-        val servers = if (preferredServer != null) {
-            listOf(preferredServer)
+    override fun lookupNetd(host: String, timeoutMs: Int): DnsLookupResult {
+        if (timeoutMs <= 0) return DnsLookupResult.Failure("timeoutMs<=0")
+        val network = pickUplink() ?: return DnsLookupResult.Failure("no uplink")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            lookupNetdApi29(network, host, timeoutMs)
         } else {
-            connectivity.getLinkProperties(network)?.dnsServers.orEmpty()
+            lookupNetdLegacy(network, host, timeoutMs)
         }
-        if (servers.isEmpty()) return emptyList()
-        val perServer = (timeoutMs / servers.size.coerceAtLeast(1)).coerceAtLeast(500)
-        for (server in servers) {
-            val addrs = udpOnce(network, server, host, DnsMessage.TYPE_A, perServer)
-            if (addrs.isNotEmpty()) return addrs
-            val aaaa = udpOnce(network, server, host, DnsMessage.TYPE_AAAA, perServer)
-            if (aaaa.isNotEmpty()) return aaaa
+    }
+
+    override fun lookupUdp(server: InetAddress, host: String, timeoutMs: Int): DnsLookupResult {
+        if (timeoutMs <= 0) return DnsLookupResult.Failure("timeoutMs<=0")
+        val network = pickUplink() ?: return DnsLookupResult.Failure("no uplink")
+        val perType = (timeoutMs / 2).coerceAtLeast(400)
+        return combineAThenAaaa(udpOnce(network, server, host, DnsMessage.TYPE_A, perType)) {
+            udpOnce(network, server, host, DnsMessage.TYPE_AAAA, perType)
         }
-        return emptyList()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun lookupNetdApi29(network: Network, host: String, timeoutMs: Int): DnsLookupResult {
+        val latch = CountDownLatch(1)
+        val box = AtomicReference<DnsLookupResult>(DnsLookupResult.Failure("unset"))
+        val cancel = CancellationSignal()
+        android.net.DnsResolver.getInstance().query(
+            network,
+            host,
+            android.net.DnsResolver.FLAG_EMPTY,
+            QUERY_EXECUTOR,
+            cancel,
+            object : android.net.DnsResolver.Callback<List<InetAddress>> {
+                override fun onAnswer(answer: List<InetAddress>, rcode: Int) {
+                    box.set(
+                        when {
+                            rcode == DnsMessage.RCODE_NXDOMAIN -> DnsLookupResult.NxDomain
+                            answer.isNotEmpty() -> DnsLookupResult.Ok(answer)
+                            rcode == 0 -> DnsLookupResult.NoData
+                            else -> DnsLookupResult.Failure("rcode=$rcode empty")
+                        },
+                    )
+                    latch.countDown()
+                }
+
+                override fun onError(error: android.net.DnsResolver.DnsException) {
+                    box.set(DnsLookupResult.Failure(error.message ?: "dns"))
+                    latch.countDown()
+                }
+            },
+        )
+        if (!latch.await(timeoutMs.toLong(), TimeUnit.MILLISECONDS)) {
+            cancel.cancel()
+            return DnsLookupResult.Failure("timeout")
+        }
+        return box.get()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun lookupNetdLegacy(network: Network, host: String, timeoutMs: Int): DnsLookupResult {
+        val task = FutureTask { network.getAllByName(host).toList() }
+        QUERY_EXECUTOR.execute(task)
+        return try {
+            val answer = task.get(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            if (answer.isEmpty()) {
+                DnsLookupResult.NoData
+            } else {
+                DnsLookupResult.Ok(answer)
+            }
+        } catch (_: TimeoutException) {
+            task.cancel(true)
+            DnsLookupResult.Failure("timeout")
+        } catch (e: ExecutionException) {
+            when (val cause = e.cause) {
+                is UnknownHostException -> DnsLookupResult.Failure("unknown")
+                else -> DnsLookupResult.Failure(cause?.message ?: "dns")
+            }
+        } catch (e: Exception) {
+            DnsLookupResult.Failure(e.message ?: "dns")
+        }
     }
 
     private fun udpOnce(
@@ -149,31 +113,69 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
         host: String,
         type: Int,
         timeoutMs: Int,
-    ): List<InetAddress> {
-        return runCatching {
+    ): DnsLookupResult {
+        return try {
             DatagramSocket().use { socket ->
-                runCatching { network.bindSocket(socket) }
+                try {
+                    network.bindSocket(socket)
+                } catch (e: Exception) {
+                    ProxyDebugLog.w("dns-udp bind FAIL server=$server host=$host err=${e.message}")
+                    return DnsLookupResult.Failure("bindSocket: ${e.message}")
+                }
                 socket.soTimeout = timeoutMs
                 val query = DnsMessage.buildQuery(host, type)
                 socket.send(DatagramPacket(query, query.size, server, 53))
                 val buf = ByteArray(512)
                 val packet = DatagramPacket(buf, buf.size)
                 socket.receive(packet)
-                DnsMessage.parseAnswers(buf, packet.length)
+                DnsMessage.toLookupResult(buf, packet.length)
             }
-        }.getOrElse { err ->
-            ProxyDebugLog.w("dns-link FAIL server=$server host=$host type=$type err=${err.message}")
-            emptyList()
+        } catch (e: SocketTimeoutException) {
+            ProxyDebugLog.w("dns-udp FAIL server=$server host=$host type=$type err=Poll timed out")
+            DnsLookupResult.Failure("Poll timed out")
+        } catch (e: Exception) {
+            ProxyDebugLog.w("dns-udp FAIL server=$server host=$host type=$type err=${e.message}")
+            DnsLookupResult.Failure(e.message ?: "udp")
         }
     }
 
     private fun pickUplink(): Network? {
         val active = connectivity.activeNetwork
-        if (active != null && !isVpn(active)) return active
-        val networks = connectivity.allNetworks.filter { !isVpn(it) && hasInternet(it) }
-        return networks.firstOrNull { hasTransport(it, NetworkCapabilities.TRANSPORT_WIFI) }
-            ?: networks.firstOrNull { hasTransport(it, NetworkCapabilities.TRANSPORT_CELLULAR) }
-            ?: networks.firstOrNull()
+        val skippedActiveVpn = active != null && isVpn(active)
+        val chosen = if (active != null && !skippedActiveVpn) {
+            active
+        } else {
+            val networks = connectivity.allNetworks.filter { !isVpn(it) && hasInternet(it) }
+            networks.firstOrNull { hasTransport(it, NetworkCapabilities.TRANSPORT_WIFI) }
+                ?: networks.firstOrNull { hasTransport(it, NetworkCapabilities.TRANSPORT_CELLULAR) }
+                ?: networks.firstOrNull()
+        }
+        if (chosen != null) {
+            logUplinkIfChanged(chosen, skippedActiveVpn)
+        }
+        return chosen
+    }
+
+    private fun logUplinkIfChanged(network: Network, skippedActiveVpn: Boolean) {
+        val handle = network.networkHandle
+        val onCell = hasTransport(network, NetworkCapabilities.TRANSPORT_CELLULAR)
+        val wifiUpWhileCell = onCell && connectivity.allNetworks.any { other ->
+            other != network && !isVpn(other) && hasInternet(other) &&
+                hasTransport(other, NetworkCapabilities.TRANSPORT_WIFI)
+        }
+        val wifiCount = connectivity.allNetworks.count {
+            !isVpn(it) && hasInternet(it) && hasTransport(it, NetworkCapabilities.TRANSPORT_WIFI)
+        }
+        val cellCount = connectivity.allNetworks.count {
+            !isVpn(it) && hasInternet(it) && hasTransport(it, NetworkCapabilities.TRANSPORT_CELLULAR)
+        }
+        val sig = "$handle:$skippedActiveVpn:$wifiUpWhileCell"
+        if (lastUplinkLogSig.getAndSet(sig) != sig) {
+            ProxyDebugLog.i(
+                "dns-uplink net=$handle wifi=$wifiCount cell=$cellCount " +
+                    "skippedActiveVpn=$skippedActiveVpn wifiUpWhileCell=$wifiUpWhileCell",
+            )
+        }
     }
 
     private fun isVpn(network: Network): Boolean =
@@ -189,21 +191,15 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
         return caps.hasTransport(transport)
     }
 
-    private fun linkProperties(): LinkProperties? {
-        val network = pickUplink() ?: return null
-        return connectivity.getLinkProperties(network)
-    }
-
-    private fun privateDnsName(lp: LinkProperties?): String? {
-        if (lp == null || Build.VERSION.SDK_INT < 28) return null
-        if (!lp.isPrivateDnsActive) return null
-        return lp.privateDnsServerName?.takeIf { it.isNotBlank() }
-    }
-
-    private fun remaining(deadlineElapsed: Long): Int =
-        (deadlineElapsed - SystemClock.elapsedRealtime()).toInt().coerceAtLeast(0)
-
     private companion object {
-        const val DOT_PORT = 853
+        val QUERY_EXECUTOR = ThreadPoolExecutor(
+            0,
+            8,
+            60L,
+            TimeUnit.SECONDS,
+            SynchronousQueue(),
+            { r -> Thread(r, "zt-dns").apply { isDaemon = true } },
+            ThreadPoolExecutor.CallerRunsPolicy(),
+        )
     }
 }

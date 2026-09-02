@@ -48,11 +48,18 @@ data class MainUiState(
     val privilegedWatchdogEnabled: Boolean = false,
     val pauseNodeInDoze: Boolean = false,
     val dnsFailOpen: Boolean = true,
+    val dnsFallbackServers: List<String> = emptyList(),
     val verboseFileLog: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as ZerotierBApplication
+
+    private val dnsSettings = combine(
+        app.preferences.dnsFailOpen,
+        app.preferences.verboseFileLog,
+        app.preferences.dnsFallbackServers,
+    ) { failOpen, verbose, servers -> Triple(failOpen, verbose, servers) }
 
     val uiState: StateFlow<MainUiState> = combine(
         app.preferences.globalMode,
@@ -65,8 +72,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         app.preferences.startOnBoot,
         app.preferences.privilegedWatchdogEnabled,
         app.preferences.pauseNodeInDoze,
-        app.preferences.dnsFailOpen,
-        app.preferences.verboseFileLog,
+        dnsSettings,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
         val mode = values[0] as GlobalMode
@@ -79,8 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val boot = values[7] as Boolean
         val watchdog = values[8] as Boolean
         val pauseDoze = values[9] as Boolean
-        val dnsFailOpen = values[10] as Boolean
-        val verboseFileLog = values[11] as Boolean
+        val (dnsFailOpen, verboseFileLog, dnsFallbackServers) = values[10] as Triple<Boolean, Boolean, List<String>>
         MainUiState(
             globalMode = mode,
             plan = orch.plan,
@@ -97,6 +102,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             privilegedWatchdogEnabled = watchdog,
             pauseNodeInDoze = pauseDoze,
             dnsFailOpen = dnsFailOpen,
+            dnsFallbackServers = dnsFallbackServers,
             verboseFileLog = verboseFileLog,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
@@ -213,6 +219,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setDnsFailOpen(enabled: Boolean) {
         viewModelScope.launch {
             app.preferences.setDnsFailOpen(enabled)
+        }
+    }
+
+    fun setDnsFallbackServers(servers: List<String>) {
+        viewModelScope.launch {
+            app.preferences.setDnsFallbackServers(servers)
         }
     }
 

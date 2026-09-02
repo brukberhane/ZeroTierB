@@ -7,6 +7,21 @@ import kotlin.random.Random
 object DnsMessage {
     const val TYPE_A = 1
     const val TYPE_AAAA = 28
+    const val RCODE_NXDOMAIN = 3
+
+    fun rcode(response: ByteArray, length: Int): Int {
+        if (length < 4) return -1
+        return response[3].toInt() and 0x0F
+    }
+
+    fun toLookupResult(response: ByteArray, length: Int): DnsLookupResult {
+        val rc = rcode(response, length)
+        if (rc == RCODE_NXDOMAIN) return DnsLookupResult.NxDomain
+        val addrs = parseAnswers(response, length)
+        if (addrs.isNotEmpty()) return DnsLookupResult.Ok(addrs)
+        if (rc == 0) return DnsLookupResult.NoData
+        return DnsLookupResult.Failure("rcode=$rc empty")
+    }
 
     fun buildQuery(host: String, type: Int = TYPE_A): ByteArray {
         val buffer = ByteBuffer.allocate(512)

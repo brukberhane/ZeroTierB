@@ -17,6 +17,60 @@ class DnsMessageTest {
     }
 
     @Test
+    fun rcode_readsNxDomain() {
+        val packet = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x83.toByte(),
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 'c'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(), 0x00,
+            0x00, 0x01, 0x00, 0x01,
+        )
+        assertEquals(DnsMessage.RCODE_NXDOMAIN, DnsMessage.rcode(packet, packet.size))
+    }
+
+    @Test
+    fun toLookupResult_nxDomain() {
+        val packet = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x83.toByte(),
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 'c'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(), 0x00,
+            0x00, 0x01, 0x00, 0x01,
+        )
+        assertEquals(DnsLookupResult.NxDomain, DnsMessage.toLookupResult(packet, packet.size))
+    }
+
+    @Test
+    fun toLookupResult_noData() {
+        val packet = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x80.toByte(),
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x07, 'e'.code.toByte(), 'x'.code.toByte(), 'a'.code.toByte(), 'm'.code.toByte(),
+            'p'.code.toByte(), 'l'.code.toByte(), 'e'.code.toByte(),
+            0x03, 'c'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(), 0x00,
+            0x00, 0x01, 0x00, 0x01,
+        )
+        assertEquals(DnsLookupResult.NoData, DnsMessage.toLookupResult(packet, packet.size))
+    }
+
+    @Test
+    fun toLookupResult_okFromCompressedA() {
+        val packet = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x80.toByte(), 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x07, 'e'.code.toByte(), 'x'.code.toByte(), 'a'.code.toByte(), 'm'.code.toByte(),
+            'p'.code.toByte(), 'l'.code.toByte(), 'e'.code.toByte(),
+            0x03, 'c'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(), 0x00,
+            0x00, 0x01, 0x00, 0x01,
+            0xC0.toByte(), 0x0C,
+            0x00, 0x01, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x3C,
+            0x00, 0x04,
+            1, 2, 3, 4,
+        )
+        val result = DnsMessage.toLookupResult(packet, packet.size)
+        assertTrue(result is DnsLookupResult.Ok)
+        assertEquals(listOf(InetAddress.getByName("1.2.3.4")), (result as DnsLookupResult.Ok).addresses)
+    }
+
+    @Test
     fun parseAnswers_readsCompressedARecord() {
         val packet = byteArrayOf(
             0x12, 0x34, 0x81.toByte(), 0x80.toByte(), 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,

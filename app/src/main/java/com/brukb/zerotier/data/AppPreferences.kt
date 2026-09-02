@@ -27,6 +27,7 @@ class AppPreferences(private val context: Context) {
     private val privilegedWatchdogKey = booleanPreferencesKey("privileged_watchdog")
     private val pauseNodeInDozeKey = booleanPreferencesKey("pause_node_in_doze")
     private val dnsFailOpenKey = booleanPreferencesKey("dns_fail_open")
+    private val dnsFallbackServersKey = stringPreferencesKey("dns_fallback_servers")
     private val verboseFileLogKey = booleanPreferencesKey("verbose_file_log")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
@@ -47,6 +48,9 @@ class AppPreferences(private val context: Context) {
     }
     val dnsFailOpen: Flow<Boolean> = context.dataStore.data.map {
         it[dnsFailOpenKey] ?: true
+    }
+    val dnsFallbackServers: Flow<List<String>> = context.dataStore.data.map {
+        parseDnsFallbackServers(it[dnsFallbackServersKey].orEmpty())
     }
     val verboseFileLog: Flow<Boolean> = context.dataStore.data.map {
         it[verboseFileLogKey] ?: false
@@ -104,6 +108,11 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[dnsFailOpenKey] = enabled }
     }
 
+    suspend fun setDnsFallbackServers(servers: List<String>) {
+        val cleaned = sanitizeDnsFallbackServers(servers)
+        context.dataStore.edit { it[dnsFallbackServersKey] = cleaned.joinToString("\n") }
+    }
+
     suspend fun setVerboseFileLog(enabled: Boolean) {
         context.dataStore.edit { it[verboseFileLogKey] = enabled }
     }
@@ -121,5 +130,35 @@ class AppPreferences(private val context: Context) {
         const val DEFAULT_LINK_DEBOUNCE_MS = 5_000
         const val MIN_LINK_DEBOUNCE_MS = 3_000
         const val MAX_LINK_DEBOUNCE_MS = 15_000
+        const val MAX_DNS_FALLBACK_SERVERS = 5
+
+        fun parseDnsFallbackServers(raw: String): List<String> =
+            raw.split('\n', ',', ' ')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .let { sanitizeDnsFallbackServers(it) }
+
+        fun sanitizeDnsFallbackServers(servers: List<String>): List<String> =
+            servers.map { it.trim() }
+                .filter { isNumericDnsServer(it) }
+                .distinct()
+                .take(MAX_DNS_FALLBACK_SERVERS)
+
+        private fun isNumericDnsServer(value: String): Boolean {
+            val host = value.removePrefix("[").removeSuffix("]")
+            if (host.contains(':')) {
+                return host.all {
+                    it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.'
+                }
+            }
+            val parts = host.split('.')
+            if (parts.size != 4) return false
+            return parts.all { part ->
+                part.isNotEmpty() &&
+                    part.length <= 3 &&
+                    part.all { it in '0'..'9' } &&
+                    part.toInt() in 0..255
+            }
+        }
     }
 }
