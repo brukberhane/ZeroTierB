@@ -48,7 +48,6 @@ class ZerotierBApplication : Application() {
         super.onCreate()
         AppLog.install(File(filesDir, "logs"))
         installCrashLogger()
-        registerShizukuListeners()
         database = AppDatabase.getInstance(this)
         networkRepository = NetworkRepository(database.networkDao())
         linkProfileRepository = LinkProfileRepository(database.linkProfileDao())
@@ -67,6 +66,7 @@ class ZerotierBApplication : Application() {
             orchestrator = orchestrator,
             scope = appScope,
         )
+        registerShizukuListeners()
         appScope.launch {
             preferences.verboseFileLog.collect { AppLog.verbose = it }
         }
@@ -127,6 +127,7 @@ class ZerotierBApplication : Application() {
         }.onFailure { AppLog.w(TAG, "Shizuku listener registration failed", it) }
         val binderListener = Shizuku.OnBinderReceivedListener {
             appScope.launch {
+                if (!::preferences.isInitialized) return@launch
                 if (!preferences.privilegedWatchdogEnabled.first()) return@launch
                 if (!ShizukuPermissionHelper.hasApiPermission()) return@launch
                 ProxyWatchdog.startIfNeeded(this@ZerotierBApplication)
