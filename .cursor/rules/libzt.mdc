@@ -135,13 +135,21 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 <!-- last-verified: 2026-08 -->
 
-### `stopProxy stalls after link loss`
+### `stopProxy stalls after link loss / Doze resume`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Wi-Fi drop → apply OFF, but `http_proxy` stays set >10s, no `zts_node_stop` log; next start reuses node (-2) | Not isolated. `stopAndAwait` 10s timeout masks it; suspected libzt-node dispatcher queue blocked during link-down event flood | OPEN. Reproduce with full logcat; check `ZeroTierNodeManager` dispatcher queue and `stopAndAwait` timeout handling |
+| OFF or swap: many `STOP received`, no `stopProxy begin`, `http_proxy` stays `127.0.0.1:*` for 15s+; Doze resume logs `zts_node_start result=0` but never `node UP` for hours | NODE_UP/join waits used blocking native delay **inside** the single-thread libzt dispatcher (`withNode` + `withTimeoutOrNull` — timeout never runs while that thread is blocked). `startStopMutex` held across the wait; STOP queued. `disable()` lived only inside `stopProxy()` behind the mutex | Poll **outside** `withNode` (`pollUntil` + coroutine `delay`). Release mutex before long waits; launch ensure loop without holding it. On STOP: `disableBlocking()` + `isRunning=false` **before** mutex. Orchestrator `applyOff` / `stopProxyStack`: `disable()` before `stopAndAwait`. `stopAndAwait` waits `fullyStopped`, not merely `!isRunning`. Bind HTTP + enable Global **before** NODE_UP (captive portal). Retry NODE_UP miss with stop+backoff+start; join miss re-join only |
 
-<!-- last-verified: 2026-08 -->
+<!-- last-verified: 2026-09 -->
+
+### `Coroutine timeout inside single-thread native dispatcher`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `withTimeoutOrNull` around a loop that calls blocking native delay/sleep on the same dispatcher never fires; JNI callbacks on that dispatcher starve | The dispatcher thread is blocked in native code; coroutine timeout and other jobs cannot run | Keep native calls in `withNode` short. Poll predicates via `withNode { … }` but sleep with `delay` on the coroutine scope **outside** `withNode`. Inject abort via `shouldAbort` checked each iteration |
+
+<!-- last-verified: 2026-09 -->
 
 ### `Close-while-reading aborts process (FORTIFY destroyed mutex)`
 

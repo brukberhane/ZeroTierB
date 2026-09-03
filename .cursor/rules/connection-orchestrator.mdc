@@ -77,9 +77,17 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Global still loopback after VPN up | Stopped proxy before `disable()` | `SystemProxyManager.disable()` then `ProxyModeService.stopAndAwait()` |
+| Global still loopback after VPN up or global OFF | Stopped proxy before `disable()`; or `disable()` only inside `stopProxy()` behind `startStopMutex` while NODE_UP wait holds the mutex | `SystemProxyManager.disable()` then `ProxyModeService.stopAndAwait()` in `applyOff`, `applyVpn`, and `stopProxyStack`. ACTION_STOP: `disableBlocking()` + `isRunning=false` before taking mutex |
 
-<!-- last-verified: 2026-08 -->
+<!-- last-verified: 2026-09 -->
+
+### `stopAndAwait returns while libzt still running`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Orchestrator starts JNI while libzt UDP 9993 still live; split-brain | STOP sets `isRunning=false` early for abort, but `stopAndAwait` treated that as success | Companion `fullyStopped` flag: set false when HTTP bind succeeds; set true only at end of `stopProxy()`. `stopAndAwait` polls `fullyStopped`, not `!isRunning` alone. Still abort swap on timeout — Global already cleared |
+
+<!-- last-verified: 2026-09 -->
 
 ### `Stack swap races`
 

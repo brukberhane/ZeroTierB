@@ -65,7 +65,21 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 
 <!-- last-verified: 2026-08 -->
 
-### `Stale adb-forwarded port`
+### `HTTP_PROXY stuck after global OFF`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| User toggles OFF; apps hang on HTTP; `settings get global http_proxy` still `127.0.0.1:port` until proxy service finally tears down (or forever if wedged) | Global clear only ran inside service teardown behind a mutex blocked by a hung native wait | Clear Global **first** on OFF/swap (`ConnectionOrchestrator.applyOff` / `stopProxyStack`) and on ACTION_STOP (`disableBlocking()` before mutex). Idempotent double-disable is fine |
+
+<!-- last-verified: 2026-09 -->
+
+### `Captive portal while PROXY starting`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Wi-Fi never validates; connectivity kick never fires; portal hosts 502 | Global HTTP_PROXY set before listen bound, or listen torn down during NODE_UP retry | Bind 127.0.0.1 + `enable()` **before** waiting for NODE_UP. Node retry must not `httpProxy.stop()` or `disable()` while PROXY wanted. Kick on `onAvailable` / INTERNET — do not require `NET_CAPABILITY_VALIDATED` |
+
+<!-- last-verified: 2026-09 -->
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |

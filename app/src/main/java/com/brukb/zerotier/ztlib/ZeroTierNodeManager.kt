@@ -12,9 +12,9 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.os.SystemClock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -49,48 +49,59 @@ class ZeroTierNodeManager(
 
     suspend fun start(
         shouldAbort: () -> Boolean = { false },
-    ): Result<Long> = withNode {
-        runCatching {
-            check(initialized.get()) { "Node not initialized" }
-            val result = node.start()
-            AppLog.i(TAG, "zts_node_start result=$result")
-            if (result == ZeroTierNative.ZTS_ERR_SERVICE) {
-                // Native node state is process-global; a previous service instance
-                // may have left it running. Reuse instead of tearing down.
-                AppLog.i(TAG, "node already running — reusing")
-            } else {
-                check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
-            }
-            if (shouldAbort()) {
-                error("Node start aborted")
-            }
-
-            // zts_node_start returns before native `_node` exists. join() on a
-            // null Node SIGSEGVs in pthread_mutex_lock. Wait for NODE_UP
-            // (node.id != 0), not ONLINE (roots) — that can take >15s on cell.
-            val nodeId = withTimeoutOrNull(NODE_UP_TIMEOUT_MS) {
-                while (node.id == 0L) {
-                    if (shouldAbort()) return@withTimeoutOrNull 0L
-                    ZeroTierNative.zts_util_delay(50)
-                }
-                node.id
-            } ?: 0L
-            check(nodeId != 0L) {
-                if (shouldAbort()) {
-                    "Node start aborted"
+    ): Result<Long> {
+        val nativeStart = withNode {
+            runCatching {
+                check(initialized.get()) { "Node not initialized" }
+                val result = node.start()
+                AppLog.i(TAG, "zts_node_start result=$result")
+                if (result == ZeroTierNative.ZTS_ERR_SERVICE) {
+                    AppLog.i(TAG, "node already running — reusing")
                 } else {
-                    "Node did not come up within ${NODE_UP_TIMEOUT_MS}ms"
+                    check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_node_start failed: $result" }
+                }
+                if (shouldAbort()) {
+                    error("Node start aborted")
                 }
             }
-
-            _state.value = _state.value.copy(
-                isOnline = node.isOnline,
-                nodeId = nodeId,
-            )
-            nodeId
-        }.onFailure { error ->
+        }
+        if (nativeStart.isFailure) {
+            val error = nativeStart.exceptionOrNull()!!
             AppLog.e(TAG, "start failed", error)
             _state.value = _state.value.copy(lastError = error.message)
+            return Result.failure(error)
+        }
+
+        val up = pollUntil(
+            timeoutMs = NODE_UP_TIMEOUT_MS,
+            periodMs = 50L,
+            shouldAbort = shouldAbort,
+            nowMs = { SystemClock.elapsedRealtime() },
+            predicate = { withNode { node.id != 0L } },
+        )
+        return when (up) {
+            PollUntilResult.Yes -> {
+                val nodeId = withNode { node.id }
+                _state.value = _state.value.copy(
+                    isOnline = withNode { node.isOnline },
+                    nodeId = nodeId,
+                )
+                Result.success(nodeId)
+            }
+            PollUntilResult.Aborted -> {
+                val error = IllegalStateException("Node start aborted")
+                AppLog.e(TAG, "start failed", error)
+                _state.value = _state.value.copy(lastError = error.message)
+                Result.failure(error)
+            }
+            PollUntilResult.Timeout -> {
+                val error = IllegalStateException(
+                    "Node did not come up within ${NODE_UP_TIMEOUT_MS}ms",
+                )
+                AppLog.e(TAG, "start failed", error)
+                _state.value = _state.value.copy(lastError = error.message)
+                Result.failure(error)
+            }
         }
     }
 
@@ -135,24 +146,27 @@ class ZeroTierNodeManager(
         networkId: Long,
         timeoutMs: Long = 120_000,
         shouldAbort: () -> Boolean = { false },
-    ): Result<ZtNetworkStatus> = withNode {
-        runCatching {
-            val ready = withTimeoutOrNull(timeoutMs) {
-                while (!node.isNetworkTransportReady(networkId)) {
-                    if (shouldAbort()) return@withTimeoutOrNull false
-                    ZeroTierNative.zts_util_delay(100)
-                }
-                true
-            } ?: false
-            check(ready) {
-                if (shouldAbort()) {
-                    "Network $networkId join aborted"
-                } else {
-                    "Network $networkId not ready within ${timeoutMs}ms"
+    ): Result<ZtNetworkStatus> {
+        val ready = pollUntil(
+            timeoutMs = timeoutMs,
+            periodMs = 100L,
+            shouldAbort = shouldAbort,
+            nowMs = { SystemClock.elapsedRealtime() },
+            predicate = { withNode { node.isNetworkTransportReady(networkId) } },
+        )
+        return when (ready) {
+            PollUntilResult.Yes -> withNode {
+                runCatching {
+                    refreshNetworkInfo(networkId)
+                    networkStatuses[networkId] ?: error("Network info missing after ready")
                 }
             }
-            refreshNetworkInfo(networkId)
-            networkStatuses[networkId] ?: error("Network info missing after ready")
+            PollUntilResult.Aborted -> Result.failure(
+                IllegalStateException("Network $networkId join aborted"),
+            )
+            PollUntilResult.Timeout -> Result.failure(
+                IllegalStateException("Network $networkId not ready within ${timeoutMs}ms"),
+            )
         }
     }
 

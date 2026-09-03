@@ -149,6 +149,7 @@ class ConnectionOrchestrator(
     }
 
     private suspend fun applyOff() {
+        SystemProxyManager(context, preferences).disable()
         stopProxyStack()
         stopVpnStack()
     }
@@ -196,6 +197,7 @@ class ConnectionOrchestrator(
     }
 
     private suspend fun stopProxyStack() {
+        SystemProxyManager(context, preferences).disable()
         if (!ProxyModeService.stopAndAwait(context)) {
             val st = ProxyModeService.state.value
             AppLog.e(
