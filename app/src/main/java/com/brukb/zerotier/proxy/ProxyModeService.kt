@@ -69,6 +69,7 @@ class ProxyModeService : Service() {
     private var networkStateJob: kotlinx.coroutines.Job? = null
     private var healthJob: kotlinx.coroutines.Job? = null
     private var ensureNodeJob: Job? = null
+    private var systemProxyEnableJob: Job? = null
     private val startStopMutex = Mutex()
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var idleGate: IdleGate
@@ -318,17 +319,8 @@ class ProxyModeService : Service() {
         }
         AppLog.i(TAG, "HTTP proxy on 127.0.0.1:$boundPort")
 
-        systemProxyManager.enable(boundPort)
-            .onSuccess {
-                updateState { copy(systemProxyActive = true, hasSecureSettingsPermission = true) }
-                AppLog.i(TAG, "System proxy set to 127.0.0.1:$boundPort")
-            }
-            .onFailure {
-                updateState { copy(systemProxyActive = false) }
-                AppLog.w(TAG, "System proxy not set: ${it.message}")
-            }
-
         registerNodeKickCallback()
+        startSystemProxyEnableLoop(boundPort)
         startHealthLoop()
         startWatchdogIfEnabled()
         startForegroundCompat(buildNotification(boundPort))
@@ -399,6 +391,50 @@ class ProxyModeService : Service() {
             if (slice == 0L) return
             val kicked = withTimeoutOrNull(slice) { nodeKick.first() }
             if (kicked != null) return
+        }
+    }
+
+    private fun probeUplinkDns(): Boolean {
+        for (host in SystemProxyEnablePolicy.PROBE_HOSTS) {
+            val addrs = runCatching { dnsResolver.resolve(host) }.getOrDefault(emptyList())
+            AppLog.i(TAG, "sysproxy-probe host=$host addrs=${addrs.size}")
+            if (SystemProxyEnablePolicy.probeSucceeded(addrs)) return true
+        }
+        return false
+    }
+
+    private fun startSystemProxyEnableLoop(port: Int) {
+        systemProxyEnableJob?.cancel()
+        systemProxyEnableJob = scope.launch {
+            runSystemProxyEnableLoop(port)
+        }
+    }
+
+    private suspend fun runSystemProxyEnableLoop(port: Int) {
+        var backoff = 0L
+        while (currentCoroutineContext().isActive && _state.value.isRunning) {
+            if (_state.value.systemProxyActive) return
+            if (port <= 0) return
+            if (probeUplinkDns()) {
+                systemProxyManager.enable(port)
+                    .onSuccess {
+                        updateState {
+                            copy(
+                                systemProxyActive = true,
+                                hasSecureSettingsPermission = true,
+                            )
+                        }
+                        AppLog.i(TAG, "System proxy set to 127.0.0.1:$port")
+                    }
+                    .onFailure { err ->
+                        updateState { copy(systemProxyActive = false) }
+                        AppLog.w(TAG, "System proxy not set: ${err.message}")
+                        if (err.message?.contains("WRITE_SECURE_SETTINGS") == true) return
+                    }
+                if (_state.value.systemProxyActive) return
+            }
+            backoff = NodeRetryPolicy.nextBackoffMs(backoff)
+            sleepAbortable(backoff) { !_state.value.isRunning }
         }
     }
 
@@ -539,6 +575,8 @@ class ProxyModeService : Service() {
         AppLog.i(TAG, "stopProxy begin nodeStarted=$nodeStarted pausedDoze=$nodePausedForDoze")
         ensureNodeJob?.cancel()
         ensureNodeJob = null
+        systemProxyEnableJob?.cancel()
+        systemProxyEnableJob = null
         markStopped()
         updateState { copy(statusMessage = "Stopping...") }
         stopHealthLoop()
@@ -663,9 +701,7 @@ class ProxyModeService : Service() {
             val app = application as ZerotierBApplication
             app.preferences.setLastHttpProxyPort(boundPort)
             updateState { copy(httpProxyPort = boundPort, statusMessage = "Proxy on 127.0.0.1:$boundPort") }
-            systemProxyManager.enable(boundPort).onSuccess {
-                updateState { copy(systemProxyActive = true) }
-            }
+            startSystemProxyEnableLoop(boundPort)
             startForegroundCompat(buildNotification(boundPort))
             startHealthLoop()
             startWatchdogIfEnabled()
