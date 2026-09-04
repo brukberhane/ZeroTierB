@@ -347,8 +347,8 @@ class ProxyModeService : Service() {
                 !_state.value.isRunning || isStartSuperseded(startToken) || nodePausedForDoze
             }
 
-            val nodeId = nodeManager.state.value.nodeId
-            val up = nodeId != null && ZeroTierNodeManager.isValidNodeId(nodeId)
+            val nodeState = nodeManager.state.value
+            val up = ZeroTierNodeManager.isReadyToJoin(nodeState)
             if (!up) {
                 nodeManager.initialize()
                 val startResult = nodeManager.start(shouldAbort = shouldAbort)
@@ -560,7 +560,9 @@ class ProxyModeService : Service() {
         val formattedId = nodeState.nodeId
             ?.takeIf { ZeroTierNodeManager.isValidNodeId(it) }
             ?.let { ZeroTierNodeManager.formatNodeId(it) }
-        val statuses = nodeState.networks.map { (id, zt) -> ztNetworkToRuntime(id, zt) }
+        val statuses = nodeState.networks.map { (id, zt) ->
+            ztNetworkToRuntime(id, zt, everOnline = nodeState.everOnline)
+        }
         updateState {
             val wentOffline = nodeLifecycle == NodeLifecycleStatus.ONLINE &&
                 lifecycle == NodeLifecycleStatus.STARTING
@@ -878,8 +880,14 @@ class ProxyModeService : Service() {
 
     private suspend fun resumeNodeFromDoze() {
         if (!nodePausedForDoze) return
-        AppLog.i(TAG, "Resuming ZeroTier node after Doze")
+        val reinit = (application as ZerotierBApplication).preferences.reinitNodeOnDozeResume.first()
+        AppLog.i(TAG, "Resuming ZeroTier node after Doze reinit=$reinit")
         nodePausedForDoze = false
+        if (reinit) {
+            nodeManager.reinitialize().onFailure {
+                AppLog.w(TAG, "doze reinit failed: ${it.message}")
+            }
+        }
         val networks = pausedNetworks.toList()
         pausedNetworks.clear()
         startNetworkStatusPump()

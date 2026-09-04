@@ -8,11 +8,15 @@ import com.brukb.zerotier.ztlib.ZtNodeState
 import com.zerotier.sdk.VirtualNetworkStatus
 import com.zerotier.sdk.util.StringUtils
 
-fun ztStatusToJoinStatus(status: ZtNetworkStatus.Status): JoinStatus = when (status) {
+fun ztStatusToJoinStatus(
+    status: ZtNetworkStatus.Status,
+    everOnline: Boolean = true,
+): JoinStatus = when (status) {
     ZtNetworkStatus.Status.JOINING -> JoinStatus.JOINING
     ZtNetworkStatus.Status.REQUESTING_CONFIG -> JoinStatus.REQUESTING_CONFIG
     ZtNetworkStatus.Status.OK -> JoinStatus.OK
-    ZtNetworkStatus.Status.ACCESS_DENIED -> JoinStatus.ACCESS_DENIED
+    ZtNetworkStatus.Status.ACCESS_DENIED ->
+        if (everOnline) JoinStatus.ACCESS_DENIED else JoinStatus.JOINING
     ZtNetworkStatus.Status.NOT_FOUND -> JoinStatus.NOT_FOUND
     ZtNetworkStatus.Status.DOWN -> JoinStatus.DOWN
     ZtNetworkStatus.Status.PORT_ERROR,
@@ -21,11 +25,15 @@ fun ztStatusToJoinStatus(status: ZtNetworkStatus.Status): JoinStatus = when (sta
     ZtNetworkStatus.Status.UNKNOWN -> JoinStatus.UNKNOWN
 }
 
-fun ztNetworkToRuntime(networkId: Long, zt: ZtNetworkStatus): NetworkRuntimeStatus {
+fun ztNetworkToRuntime(
+    networkId: Long,
+    zt: ZtNetworkStatus,
+    everOnline: Boolean = true,
+): NetworkRuntimeStatus {
     val hexId = ZerotierBNetwork.normalizeNetworkId(StringUtils.networkIdToString(networkId))
     return NetworkRuntimeStatus(
         networkId = hexId,
-        joinStatus = ztStatusToJoinStatus(zt.status),
+        joinStatus = ztStatusToJoinStatus(zt.status, everOnline),
         assignedAddresses = zt.assignedAddresses,
         routes = zt.routes,
         dnsServers = zt.dnsServers,

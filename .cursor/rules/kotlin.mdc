@@ -16,15 +16,16 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 ## Invariants
 
 1. New logic gets unit tests in the same task (table-ish parameterized where cheap).
-2. Orchestrator / classifier / route resolver must be testable without Robolectric when possible (fakes).
-3. No `runBlocking` on the main thread in production code (BootReceiver already uses it — do not spread).
-4. Match existing naming: `ZerotierB*`, package `com.brukb.zerotier`.
+2. **Bug fixes get a regression test** when the decision can be extracted from Android/JNI (predicates, status maps, formatters). The test must fail on the old behavior. Device-only hangs: extract the predicate and test that — do not skip because the service is unmockable.
+3. Orchestrator / classifier / route resolver must be testable without Robolectric when possible (fakes).
+4. No `runBlocking` on the main thread in production code (BootReceiver already uses it — do not spread).
+5. Match existing naming: `ZerotierB*`, package `com.brukb.zerotier`.
 
 ## External docs
 
 **Docs (if stuck):** https://kotlinlang.org/docs/home.html
 
-- last consulted: 2026-08
+- last consulted: 2026-09
 
 ## Problem classes
 
@@ -59,3 +60,11 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 | Unresolved `kotlinOptions`, or `ApplicationExtensionImpl cannot be cast to BaseExtension` | AGP 9 built-in Kotlin dropped `android.kotlinOptions`; applying `org.jetbrains.kotlin.android` cannot cast the AGP 9 extension | JVM 17 via `compileOptions` only. Do not re-add `kotlin-android`. Keep the Compose compiler plugin. |
 
 <!-- last-verified: 2026-08 -->
+
+### `Bugfix without a regression test`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Same idle/restart bug returns after a “fixed” build | Fix lived only in a Service/JNI path with no assertion | Extract the decision (valid id, event-up, status map) into a pure function and table-test old vs new behavior |
+
+<!-- last-verified: 2026-09 -->

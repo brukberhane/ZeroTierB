@@ -151,7 +151,8 @@ advance to the next layer on a broken base.
 ### Atomic work + verification gates
 
 Prefer small, independently checkable units. Before calling a chunk done, run
-`make verify`.
+`make verify`. Bug fixes: add a regression test when the decision is extractable
+from Android/JNI (see `.cursor/rules/kotlin.mdc`).
 
 ### Model split: expensive plan → cheap execute
 

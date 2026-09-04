@@ -27,6 +27,38 @@ class RuntimeStatusMapperTest {
     }
 
     @Test
+    fun ztStatusToJoinStatus_accessDeniedBeforeOnlineIsJoining() {
+        assertEquals(
+            JoinStatus.JOINING,
+            ztStatusToJoinStatus(ZtNetworkStatus.Status.ACCESS_DENIED, everOnline = false),
+        )
+        assertEquals(
+            JoinStatus.ACCESS_DENIED,
+            ztStatusToJoinStatus(ZtNetworkStatus.Status.ACCESS_DENIED, everOnline = true),
+        )
+        assertEquals(
+            JoinStatus.OK,
+            ztStatusToJoinStatus(ZtNetworkStatus.Status.OK, everOnline = false),
+        )
+    }
+
+    @Test
+    fun ztNetworkToRuntime_hidesAccessDeniedUntilOnline() {
+        val zt = ZtNetworkStatus(
+            networkId = 1L,
+            status = ZtNetworkStatus.Status.ACCESS_DENIED,
+        )
+        assertEquals(
+            JoinStatus.JOINING,
+            ztNetworkToRuntime(zt.networkId, zt, everOnline = false).joinStatus,
+        )
+        assertEquals(
+            JoinStatus.ACCESS_DENIED,
+            ztNetworkToRuntime(zt.networkId, zt, everOnline = true).joinStatus,
+        )
+    }
+
+    @Test
     fun vpnVirtualStatusToJoinStatus_requestingAndOk() {
         assertEquals(
             JoinStatus.REQUESTING_CONFIG,
@@ -110,6 +142,14 @@ class RuntimeStatusMapperTest {
         assertEquals(
             NodeLifecycleStatus.STARTING,
             ztNodeStateToLifecycle(ZtNodeState(isOnline = false, nodeId = 1L), pausedDoze = false),
+        )
+        assertEquals(
+            "UP without roots is Starting, not Online (airgap)",
+            NodeLifecycleStatus.STARTING,
+            ztNodeStateToLifecycle(
+                ZtNodeState(receivedNodeUp = true, isOnline = false, nodeId = 0x2721c17d93L),
+                pausedDoze = false,
+            ),
         )
     }
 }

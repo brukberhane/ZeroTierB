@@ -21,12 +21,13 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 3. Do not start libzt while JNI `Node` is running.
 4. SOCKS is not the system proxy. SOCKS listen is optional later (INDEX phase 7-equivalent).
 5. Prefer restoring `archive/proxy-mode` then re-package to `com.brukb.zerotier` over rewriting from memory.
+6. Node ready to join = **`NODE_UP` event** (local init). `get_id != 0` is not enough (`ZTS_ERR_SERVICE` is −2; identity can appear before UP). Do not wait for `NODE_ONLINE` (roots/moon).
 
 ## External docs
 
 **Docs (if stuck):** in-tree `libzt/README.md` and archive `com.zerotier.pylon.proxy`
 
-- last consulted: 2026-08
+- last consulted: 2026-09
 
 ## Problem classes
 
@@ -166,3 +167,20 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 | Large uploads through ZT socket corrupt/truncate; small requests fine | `zts_bsd_write_offset` can return a short count (send buffer full); stock `ZeroTierOutputStream.write` ignores the return value | Loop on the return value until all bytes written (patched in-tree `ZeroTierOutputStream.write`; rebuild AAR per `libzt patch not in APK`) |
 
 <!-- last-verified: 2026-08 -->
+
+### `get_id is not node up`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| UI node ID `fffffffffffffffe`; join “Node not up” | `zts_node_get_id` returns `ZTS_ERR_SERVICE` (−2) when the service isn’t running; `id != 0` treated as up | Valid id is 40-bit `1..0xffffffffff`. Never publish error-range ids |
+| After Doze resume: lifecycle Starting, real identity, no `node UP` log, join hangs ~30s; OFF→PROXY heals | `get_id` can return a real address before the `NODE_UP` event; ensure loop skips restart | Wait for **`NODE_UP` event**, not `get_id` and not `NODE_ONLINE` (ONLINE = roots/moon — airgap). Timeout → `stop()` + backoff. Opt-in storage+handler reinit under Pause-in-Doze (default off) |
+
+<!-- last-verified: 2026-09 -->
+
+### `ACCESS_DENIED before ONLINE`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Chip Access denied while node Starting; log has no `ACCESS_DENIED` event; toggle PROXY joins fine | `zts_net_get_status` returns 2 while roots unreachable; 2s poll publishes deny | Map ACCESS_DENIED → JOINING until this session has `NODE_ONLINE`. Log poll `native=`/`mapped=` on change |
+
+<!-- last-verified: 2026-09 -->

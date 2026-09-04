@@ -57,6 +57,7 @@ data class MainUiState(
     val startOnBoot: Boolean = false,
     val privilegedWatchdogEnabled: Boolean = false,
     val pauseNodeInDoze: Boolean = false,
+    val reinitNodeOnDozeResume: Boolean = false,
     val dnsFailOpen: Boolean = true,
     val dnsFallbackServers: List<String> = emptyList(),
     val verboseFileLog: Boolean = false,
@@ -90,6 +91,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    private val dozeSettings = combine(
+        app.preferences.pauseNodeInDoze,
+        app.preferences.reinitNodeOnDozeResume,
+    ) { pause, reinit -> pause to reinit }
+
     val uiState: StateFlow<MainUiState> = combine(
         app.preferences.globalMode,
         app.orchestrator.state,
@@ -100,7 +106,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         app.preferences.linkDebounceMs,
         app.preferences.startOnBoot,
         app.preferences.privilegedWatchdogEnabled,
-        app.preferences.pauseNodeInDoze,
+        dozeSettings,
         dnsSettings,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -113,7 +119,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val debounce = values[6] as Int
         val boot = values[7] as Boolean
         val watchdog = values[8] as Boolean
-        val pauseDoze = values[9] as Boolean
+        val doze = values[9] as Pair<*, *>
+        val pauseDoze = doze.first as Boolean
+        val reinitDoze = doze.second as Boolean
         val dns = values[10] as DnsUiBundle
         MainUiState(
             globalMode = mode,
@@ -130,6 +138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startOnBoot = boot,
             privilegedWatchdogEnabled = watchdog,
             pauseNodeInDoze = pauseDoze,
+            reinitNodeOnDozeResume = reinitDoze,
             dnsFailOpen = dns.failOpen,
             dnsFallbackServers = dns.servers,
             verboseFileLog = dns.verbose,
@@ -245,6 +254,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setPauseNodeInDoze(enabled: Boolean) {
         viewModelScope.launch {
             app.preferences.setPauseNodeInDoze(enabled)
+        }
+    }
+
+    fun setReinitNodeOnDozeResume(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setReinitNodeOnDozeResume(enabled)
         }
     }
 

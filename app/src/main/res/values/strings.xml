@@ -70,6 +70,8 @@
     <string name="watchdog_needs_shizuku">Shizuku required</string>
     <string name="pause_doze_title">Pause ZeroTier in Doze</string>
     <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
+    <string name="doze_reinit_title">Re-init node after Doze</string>
+    <string name="doze_reinit_hint">Off (default): start the existing node again. On: reload identity storage and the event handler first. Use On if the node stays Starting after wake. Does not wait for ZeroTier roots.</string>
     <string name="dns_skip_probe_title">System proxy without uplink DNS</string>
     <string name="dns_skip_probe_hint">Off (default): wait until a public name (example.com) resolves, then set the Android HTTP proxy. On: set it as soon as the local proxy is listening, even if the internet DNS is down. Use On for air-gapped ZeroTier (IP or ZeroTier DNS names). Captive or “no internet” checks may fail until WAN DNS works.</string>
     <string name="dns_heal_title">Improved uplink DNS</string>

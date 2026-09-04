@@ -24,6 +24,8 @@ data class ZtNetworkStatus(
 
 data class ZtNodeState(
     val isOnline: Boolean = false,
+    val receivedNodeUp: Boolean = false,
+    val everOnline: Boolean = false,
     val nodeId: Long? = null,
     val networks: Map<Long, ZtNetworkStatus> = emptyMap(),
     val lastError: String? = null,

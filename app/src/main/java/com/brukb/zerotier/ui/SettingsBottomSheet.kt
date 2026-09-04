@@ -42,6 +42,7 @@ fun SettingsBottomSheet(
     startOnBoot: Boolean,
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
+    reinitNodeOnDozeResume: Boolean,
     skipUplinkDnsProbe: Boolean,
     uplinkDnsHeal: Boolean,
     preferWifiDns: Boolean,
@@ -57,6 +58,7 @@ fun SettingsBottomSheet(
     onStartOnBoot: (Boolean) -> Unit,
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
+    onReinitNodeOnDozeResume: (Boolean) -> Unit,
     onSkipUplinkDnsProbe: (Boolean) -> Unit,
     onUplinkDnsHeal: (Boolean) -> Unit,
     onPreferWifiDns: (Boolean) -> Unit,
@@ -139,6 +141,18 @@ fun SettingsBottomSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (pauseNodeInDoze) {
+                        SettingsSwitchRow(
+                            label = stringResource(R.string.doze_reinit_title),
+                            checked = reinitNodeOnDozeResume,
+                            onCheckedChange = onReinitNodeOnDozeResume,
+                        )
+                        Text(
+                            stringResource(R.string.doze_reinit_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (showGrantHint) {
                         TextButton(onClick = onGrantHint) {
                             Text(stringResource(R.string.settings_grant_hint))

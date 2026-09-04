@@ -47,6 +47,12 @@ class ZeroTierNodeManager(
         }
     }
 
+    /** After [stop], reload storage + event handler. No-op unless the node is down. */
+    suspend fun reinitialize(): Result<Unit> {
+        withNode { initialized.set(false) }
+        return initialize()
+    }
+
     suspend fun start(
         shouldAbort: () -> Boolean = { false },
     ): Result<Long> {
@@ -77,12 +83,14 @@ class ZeroTierNodeManager(
             periodMs = 50L,
             shouldAbort = shouldAbort,
             nowMs = { SystemClock.elapsedRealtime() },
-            predicate = { withNode { isValidNodeId(node.id) } },
+            predicate = {
+                _state.value.receivedNodeUp && withNode { isValidNodeId(node.id) }
+            },
         )
         return when (up) {
             PollUntilResult.Yes -> {
                 val nodeId = withNode { node.id }
-                if (!isValidNodeId(nodeId)) {
+                if (!_state.value.receivedNodeUp || !isValidNodeId(nodeId)) {
                     val error = IllegalStateException(
                         "Node did not come up within ${NODE_UP_TIMEOUT_MS}ms",
                     )
@@ -90,8 +98,10 @@ class ZeroTierNodeManager(
                     _state.value = _state.value.copy(lastError = error.message)
                     return Result.failure(error)
                 }
+                val online = withNode { node.isOnline }
                 _state.value = _state.value.copy(
-                    isOnline = withNode { node.isOnline },
+                    isOnline = online,
+                    everOnline = _state.value.everOnline || online,
                     nodeId = nodeId,
                 )
                 Result.success(nodeId)
@@ -124,7 +134,9 @@ class ZeroTierNodeManager(
 
     suspend fun join(networkId: Long, config: ZerotierBNetwork? = null): Result<Unit> = withNode {
         runCatching {
-            check(isValidNodeId(node.id)) { "Node not up — cannot join" }
+            check(_state.value.receivedNodeUp && isValidNodeId(node.id)) {
+                "Node not up — cannot join"
+            }
             config?.let {
                 val settingsResult = ZtNetworkQuery.setNetworkSettings(
                     networkId,
@@ -180,7 +192,14 @@ class ZeroTierNodeManager(
 
     suspend fun refreshNetworkInfo(networkId: Long): ZtNetworkStatus = withNode {
         val statusCode = ZeroTierNative.zts_net_get_status(networkId)
-        val status = mapNetworkStatus(statusCode)
+        val status = mapNetworkStatusCode(statusCode)
+        val previous = networkStatuses[networkId]?.status
+        if (previous != status) {
+            AppLog.i(
+                TAG,
+                "net poll id=${formatNodeId(networkId)} native=$statusCode mapped=$status",
+            )
+        }
         val addresses = queryAddresses(networkId)
         val routes = queryRoutes(networkId)
         val dnsServers = ZtNetworkQuery.queryDnsServers(networkId)
@@ -214,18 +233,6 @@ class ZeroTierNodeManager(
     private fun queryRoutes(networkId: Long): List<String> =
         ZtNetworkQuery.queryManagedRouteCidrs(networkId).distinct()
 
-    private fun mapNetworkStatus(code: Int): ZtNetworkStatus.Status {
-        return when (code) {
-            0 -> ZtNetworkStatus.Status.REQUESTING_CONFIG
-            1 -> ZtNetworkStatus.Status.OK
-            2 -> ZtNetworkStatus.Status.ACCESS_DENIED
-            3 -> ZtNetworkStatus.Status.NOT_FOUND
-            4 -> ZtNetworkStatus.Status.PORT_ERROR
-            5 -> ZtNetworkStatus.Status.CLIENT_TOO_OLD
-            else -> ZtNetworkStatus.Status.UNKNOWN
-        }
-    }
-
     private fun updateNetworkStatus(networkId: Long, status: ZtNetworkStatus.Status) {
         val existing = networkStatuses[networkId]
         networkStatuses[networkId] = (existing ?: ZtNetworkStatus(networkId, status)).copy(status = status)
@@ -241,6 +248,7 @@ class ZeroTierNodeManager(
             ZeroTierNative.ZTS_EVENT_NODE_UP -> {
                 val nodeId = node.id
                 _state.value = _state.value.copy(
+                    receivedNodeUp = true,
                     nodeId = nodeId.takeIf { isValidNodeId(it) } ?: _state.value.nodeId,
                 )
                 AppLog.i(TAG, "node UP id=${formatNodeIdentity(nodeId)}")
@@ -249,6 +257,7 @@ class ZeroTierNodeManager(
                 val nodeId = node.id
                 _state.value = _state.value.copy(
                     isOnline = true,
+                    everOnline = true,
                     nodeId = nodeId.takeIf { isValidNodeId(it) } ?: _state.value.nodeId,
                 )
                 AppLog.i(TAG, "node ONLINE id=${formatNodeIdentity(nodeId)}")
@@ -352,6 +361,19 @@ class ZeroTierNodeManager(
 
         /** 40-bit ZeroTier address. libzt `zts_node_get_id` returns `ZTS_ERR_*` (e.g. -2) when down. */
         fun isValidNodeId(nodeId: Long): Boolean = nodeId in 1L..MAX_ZT_ADDRESS
+
+        fun isReadyToJoin(state: ZtNodeState): Boolean =
+            state.receivedNodeUp && state.nodeId != null && isValidNodeId(state.nodeId)
+
+        fun mapNetworkStatusCode(code: Int): ZtNetworkStatus.Status = when (code) {
+            0 -> ZtNetworkStatus.Status.REQUESTING_CONFIG
+            1 -> ZtNetworkStatus.Status.OK
+            2 -> ZtNetworkStatus.Status.ACCESS_DENIED
+            3 -> ZtNetworkStatus.Status.NOT_FOUND
+            4 -> ZtNetworkStatus.Status.PORT_ERROR
+            5 -> ZtNetworkStatus.Status.CLIENT_TOO_OLD
+            else -> ZtNetworkStatus.Status.UNKNOWN
+        }
 
         private const val MAX_ZT_ADDRESS = 0xFFFFFFFFFFL
     }
