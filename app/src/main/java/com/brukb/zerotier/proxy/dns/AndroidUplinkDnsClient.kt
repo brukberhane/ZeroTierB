@@ -7,10 +7,12 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.CancellationSignal
 import androidx.annotation.RequiresApi
+import com.brukb.zerotier.data.model.UplinkDnsPreference
 import com.brukb.zerotier.proxy.ProxyDebugLog
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.Socket
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.CountDownLatch
@@ -26,6 +28,12 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
     private val connectivity =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val lastUplinkLogSig = AtomicReference<String?>(null)
+
+    @Volatile
+    var healEnabled: Boolean = true
+
+    @Volatile
+    var preference: UplinkDnsPreference = UplinkDnsPreference.WIFI_FIRST
 
     override fun lookupNetd(host: String, timeoutMs: Int): DnsLookupResult {
         if (timeoutMs <= 0) return DnsLookupResult.Failure("timeoutMs<=0")
@@ -43,6 +51,40 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
         val perType = (timeoutMs / 2).coerceAtLeast(400)
         return combineAThenAaaa(udpOnce(network, server, host, DnsMessage.TYPE_A, perType)) {
             udpOnce(network, server, host, DnsMessage.TYPE_AAAA, perType)
+        }
+    }
+
+    override fun lookupLinkDns(host: String, timeoutMs: Int): DnsLookupResult {
+        if (!healEnabled) return DnsLookupResult.Failure("heal off")
+        if (timeoutMs <= 0) return DnsLookupResult.Failure("timeoutMs<=0")
+        val network = pickUplink() ?: return DnsLookupResult.Failure("no uplink")
+        val servers = connectivity.getLinkProperties(network)?.dnsServers.orEmpty()
+            .filter { isUsableLinkDns(it) }
+        if (servers.isEmpty()) return DnsLookupResult.Failure("no link dns")
+        var lastFail: DnsLookupResult = DnsLookupResult.Failure("no link dns")
+        val perType = (timeoutMs / 2).coerceAtLeast(400)
+        for (server in servers) {
+            val result = combineAThenAaaa(udpOnce(network, server, host, DnsMessage.TYPE_A, perType)) {
+                udpOnce(network, server, host, DnsMessage.TYPE_AAAA, perType)
+            }
+            when (result) {
+                is DnsLookupResult.Ok,
+                is DnsLookupResult.NxDomain,
+                is DnsLookupResult.NoData,
+                -> return result
+                is DnsLookupResult.Failure -> lastFail = result
+            }
+        }
+        return lastFail
+    }
+
+    fun bindTcpToUplink(socket: Socket) {
+        if (!healEnabled) return
+        val network = pickUplink() ?: return
+        try {
+            network.bindSocket(socket)
+        } catch (e: Exception) {
+            ProxyDebugLog.w("tcp-bind FAIL err=${e.message}")
         }
     }
 
@@ -140,9 +182,21 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
     }
 
     private fun pickUplink(): Network? {
+        val chosen = if (!healEnabled) {
+            pickUplinkLegacy()
+        } else {
+            pickUplinkHealed()
+        }
+        if (chosen != null) {
+            logUplinkIfChanged(chosen)
+        }
+        return chosen
+    }
+
+    private fun pickUplinkLegacy(): Network? {
         val active = connectivity.activeNetwork
         val skippedActiveVpn = active != null && isVpn(active)
-        val chosen = if (active != null && !skippedActiveVpn) {
+        return if (active != null && !skippedActiveVpn) {
             active
         } else {
             val networks = connectivity.allNetworks.filter { !isVpn(it) && hasInternet(it) }
@@ -150,33 +204,45 @@ class AndroidUplinkDnsClient(context: Context) : UplinkDnsClient {
                 ?: networks.firstOrNull { hasTransport(it, NetworkCapabilities.TRANSPORT_CELLULAR) }
                 ?: networks.firstOrNull()
         }
-        if (chosen != null) {
-            logUplinkIfChanged(chosen, skippedActiveVpn)
-        }
-        return chosen
     }
 
-    private fun logUplinkIfChanged(network: Network, skippedActiveVpn: Boolean) {
-        val handle = network.networkHandle
-        val onCell = hasTransport(network, NetworkCapabilities.TRANSPORT_CELLULAR)
-        val wifiUpWhileCell = onCell && connectivity.allNetworks.any { other ->
-            other != network && !isVpn(other) && hasInternet(other) &&
-                hasTransport(other, NetworkCapabilities.TRANSPORT_WIFI)
+    private fun pickUplinkHealed(): Network? {
+        val networks = connectivity.allNetworks
+        val candidates = networks.map { network ->
+            UplinkCandidate(
+                id = network.networkHandle,
+                isVpn = isVpn(network),
+                isWifi = hasTransport(network, NetworkCapabilities.TRANSPORT_WIFI),
+                isCellular = hasTransport(network, NetworkCapabilities.TRANSPORT_CELLULAR),
+                hasInternet = hasInternet(network),
+            )
         }
+        val picked = UplinkNetworkPicker.pick(candidates, preference) ?: return null
+        return networks.firstOrNull { it.networkHandle == picked.id }
+    }
+
+    private fun logUplinkIfChanged(network: Network) {
+        val handle = network.networkHandle
         val wifiCount = connectivity.allNetworks.count {
             !isVpn(it) && hasInternet(it) && hasTransport(it, NetworkCapabilities.TRANSPORT_WIFI)
         }
         val cellCount = connectivity.allNetworks.count {
             !isVpn(it) && hasInternet(it) && hasTransport(it, NetworkCapabilities.TRANSPORT_CELLULAR)
         }
-        val sig = "$handle:$skippedActiveVpn:$wifiUpWhileCell"
+        val sig = "$handle:$healEnabled:$preference:$wifiCount:$cellCount"
         if (lastUplinkLogSig.getAndSet(sig) != sig) {
             ProxyDebugLog.i(
                 "dns-uplink net=$handle wifi=$wifiCount cell=$cellCount " +
-                    "skippedActiveVpn=$skippedActiveVpn wifiUpWhileCell=$wifiUpWhileCell",
+                    "heal=$healEnabled pref=$preference",
             )
         }
     }
+
+    private fun isUsableLinkDns(addr: InetAddress): Boolean =
+        !addr.isLoopbackAddress &&
+            !addr.isAnyLocalAddress &&
+            !addr.isLinkLocalAddress &&
+            !addr.isMulticastAddress
 
     private fun isVpn(network: Network): Boolean =
         hasTransport(network, NetworkCapabilities.TRANSPORT_VPN)

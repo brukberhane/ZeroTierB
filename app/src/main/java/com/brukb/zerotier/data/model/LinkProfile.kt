@@ -13,6 +13,9 @@ data class LinkProfile(
     val simSlotIndex: Int? = null,
     val label: String = "",
     val iccId: String? = null,
+    val skipUplinkDnsProbe: Boolean = false,
+    val uplinkDnsHealEnabled: Boolean = true,
+    val uplinkDnsPreference: UplinkDnsPreference = UplinkDnsPreference.WIFI_FIRST,
 ) {
     companion object {
         const val OTHER_ID = "other"

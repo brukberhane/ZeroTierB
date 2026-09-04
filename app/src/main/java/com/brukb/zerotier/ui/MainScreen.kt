@@ -66,6 +66,7 @@ import com.brukb.zerotier.connection.JoinStatus
 import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.Runtime
 import com.brukb.zerotier.data.model.GlobalMode
+import com.brukb.zerotier.data.model.UplinkDnsPreference
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.system.BatteryOptimizationHelper
@@ -275,6 +276,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 startOnBoot = uiState.startOnBoot,
                 watchdogEnabled = uiState.privilegedWatchdogEnabled,
                 pauseNodeInDoze = uiState.pauseNodeInDoze,
+                skipUplinkDnsProbe = uiState.skipUplinkDnsProbe,
+                uplinkDnsHeal = uiState.uplinkDnsHeal,
+                preferWifiDns = uiState.uplinkDnsPreference == UplinkDnsPreference.WIFI_FIRST,
                 dnsFailOpen = uiState.dnsFailOpen,
                 dnsFallbackServers = uiState.dnsFallbackServers,
                 verboseFileLog = uiState.verboseFileLog,
@@ -287,6 +291,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onStartOnBoot = viewModel::setStartOnBoot,
                 onWatchdogEnabled = viewModel::setPrivilegedWatchdogEnabled,
                 onPauseNodeInDoze = viewModel::setPauseNodeInDoze,
+                onSkipUplinkDnsProbe = viewModel::setSkipUplinkDnsProbe,
+                onUplinkDnsHeal = viewModel::setUplinkDnsHeal,
+                onPreferWifiDns = viewModel::setPreferWifiDns,
                 onDnsFailOpen = viewModel::setDnsFailOpen,
                 onDnsFallbackServers = viewModel::setDnsFallbackServers,
                 onVerboseFileLog = viewModel::setVerboseFileLog,

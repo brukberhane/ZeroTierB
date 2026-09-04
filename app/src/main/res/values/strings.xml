@@ -70,6 +70,14 @@
     <string name="watchdog_needs_shizuku">Shizuku required</string>
     <string name="pause_doze_title">Pause ZeroTier in Doze</string>
     <string name="pause_doze_hint">Stops the overlay while the device is idle to silence libzt keepalives. Overlay returns when Doze ends. Off by default.</string>
+    <string name="dns_skip_probe_title">System proxy without uplink DNS</string>
+    <string name="dns_skip_probe_hint">Off (default): wait until a public name (example.com) resolves, then set the Android HTTP proxy. On: set it as soon as the local proxy is listening, even if the internet DNS is down. Use On for air-gapped ZeroTier (IP or ZeroTier DNS names). Captive or “no internet” checks may fail until WAN DNS works.</string>
+    <string name="dns_heal_title">Improved uplink DNS</string>
+    <string name="dns_heal_hint">When Wi-Fi and cellular are both present, pick one network for public DNS and uplink TCP even if Android has not validated it. Also query that network’s DHCP DNS over UDP if system DNS fails. Does not change ZeroTier overlay addresses. Off: old behavior (follow Android’s active network).</string>
+    <string name="dns_prefer_wifi_title">Prefer Wi-Fi DNS</string>
+    <string name="dns_prefer_wifi_hint">On: try Wi-Fi first. Off: try cellular (APN) first. If only one of those networks exists, that one is used. Ignored when Improved uplink DNS is off.</string>
+    <string name="dns_proxy_scope_hint">These apply when Global mode is PROXY. In AUTO, set the same options on each link that uses PROXY (Links).</string>
+    <string name="dns_link_proxy_options">System proxy DNS (this link, AUTO)</string>
     <string name="dns_fail_open_title">Extra DNS on failure</string>
     <string name="dns_fail_open_hint">If system DNS on Wi-Fi or cellular fails, try extra nameservers below. Off: no extra nameservers. ZeroTier DNS still used for matching domains and NXDOMAIN. Extra servers are not used for NXDOMAIN or NODATA.</string>
     <string name="dns_fallback_title">Fallback DNS servers</string>

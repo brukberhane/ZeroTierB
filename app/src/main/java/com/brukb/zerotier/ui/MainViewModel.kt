@@ -17,6 +17,7 @@ import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.LinkKind
 import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.data.model.LinkProfile
+import com.brukb.zerotier.data.model.UplinkDnsPreference
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.ProxyModeService
 import com.brukb.zerotier.proxy.ProxyServiceState
@@ -31,6 +32,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+private data class DnsUiBundle(
+    val failOpen: Boolean,
+    val verbose: Boolean,
+    val servers: List<String>,
+    val skipProbe: Boolean,
+    val heal: Boolean,
+    val uplinkPref: UplinkDnsPreference,
+)
 
 data class MainUiState(
     val globalMode: GlobalMode = GlobalMode.OFF,
@@ -50,16 +60,35 @@ data class MainUiState(
     val dnsFailOpen: Boolean = true,
     val dnsFallbackServers: List<String> = emptyList(),
     val verboseFileLog: Boolean = false,
+    val skipUplinkDnsProbe: Boolean = false,
+    val uplinkDnsHeal: Boolean = true,
+    val uplinkDnsPreference: UplinkDnsPreference = UplinkDnsPreference.WIFI_FIRST,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as ZerotierBApplication
 
     private val dnsSettings = combine(
-        app.preferences.dnsFailOpen,
-        app.preferences.verboseFileLog,
-        app.preferences.dnsFallbackServers,
-    ) { failOpen, verbose, servers -> Triple(failOpen, verbose, servers) }
+        combine(
+            app.preferences.dnsFailOpen,
+            app.preferences.verboseFileLog,
+            app.preferences.dnsFallbackServers,
+        ) { failOpen, verbose, servers -> Triple(failOpen, verbose, servers) },
+        combine(
+            app.preferences.skipUplinkDnsProbe,
+            app.preferences.uplinkDnsHeal,
+            app.preferences.uplinkDnsPreference,
+        ) { skip, heal, pref -> Triple(skip, heal, pref) },
+    ) { a, b ->
+        DnsUiBundle(
+            failOpen = a.first,
+            verbose = a.second,
+            servers = a.third,
+            skipProbe = b.first,
+            heal = b.second,
+            uplinkPref = b.third,
+        )
+    }
 
     val uiState: StateFlow<MainUiState> = combine(
         app.preferences.globalMode,
@@ -85,7 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val boot = values[7] as Boolean
         val watchdog = values[8] as Boolean
         val pauseDoze = values[9] as Boolean
-        val (dnsFailOpen, verboseFileLog, dnsFallbackServers) = values[10] as Triple<Boolean, Boolean, List<String>>
+        val dns = values[10] as DnsUiBundle
         MainUiState(
             globalMode = mode,
             plan = orch.plan,
@@ -101,9 +130,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             startOnBoot = boot,
             privilegedWatchdogEnabled = watchdog,
             pauseNodeInDoze = pauseDoze,
-            dnsFailOpen = dnsFailOpen,
-            dnsFallbackServers = dnsFallbackServers,
-            verboseFileLog = verboseFileLog,
+            dnsFailOpen = dns.failOpen,
+            dnsFallbackServers = dns.servers,
+            verboseFileLog = dns.verbose,
+            skipUplinkDnsProbe = dns.skipProbe,
+            uplinkDnsHeal = dns.heal,
+            uplinkDnsPreference = dns.uplinkPref,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -231,6 +263,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setVerboseFileLog(enabled: Boolean) {
         viewModelScope.launch {
             app.preferences.setVerboseFileLog(enabled)
+        }
+    }
+
+    fun setSkipUplinkDnsProbe(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setSkipUplinkDnsProbe(enabled)
+        }
+    }
+
+    fun setUplinkDnsHeal(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setUplinkDnsHeal(enabled)
+        }
+    }
+
+    fun setPreferWifiDns(enabled: Boolean) {
+        viewModelScope.launch {
+            app.preferences.setUplinkDnsPreference(
+                if (enabled) UplinkDnsPreference.WIFI_FIRST else UplinkDnsPreference.CELLULAR_FIRST,
+            )
+        }
+    }
+
+    fun setLinkDnsPolicy(
+        profile: LinkProfile,
+        skipUplinkDnsProbe: Boolean,
+        healEnabled: Boolean,
+        preferWifiDns: Boolean,
+    ) {
+        viewModelScope.launch {
+            app.linkProfileRepository.upsert(
+                profile.copy(
+                    skipUplinkDnsProbe = skipUplinkDnsProbe,
+                    uplinkDnsHealEnabled = healEnabled,
+                    uplinkDnsPreference = if (preferWifiDns) {
+                        UplinkDnsPreference.WIFI_FIRST
+                    } else {
+                        UplinkDnsPreference.CELLULAR_FIRST
+                    },
+                ),
+            )
+            app.orchestrator.refresh()
         }
     }
 

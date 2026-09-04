@@ -15,12 +15,12 @@ Does **not** cover: Compose list UI.
 
 ## Invariants
 
-1. Never bump `version` without a `Migration`. No `fallbackToDestructiveMigration` for shipped users. Room **v3** ships `MIGRATION_1_2` + `MIGRATION_2_3` (networks pin/createdAt + `link_profiles`).
+1. Never bump `version` without a `Migration`. No `fallbackToDestructiveMigration` for shipped users. Room **v4** ships `MIGRATION_1_2` + `MIGRATION_2_3` + `MIGRATION_3_4` (networks pin/createdAt + `link_profiles` + per-link system-proxy DNS policy).
 2. `link_profiles` is physical links, not ZT nets. Seed `other` / PROXY; unknown Wi‑Fi SSID must **not** auto-insert rows (handled in AUTO/classifier tasks).
 3. Pin-main: one row `isPinnedMain=1`. Clear others in the same transaction (`setPinnedMain`).
 4. Main net among enabled: pin wins; else oldest real `createdAt`; `createdAt=0` sorts last, then `networkId`.
 5. On network insert, set `createdAt` if unset; on upsert keep existing `createdAt` / pin unless `setPinnedMain`.
-6. Mobile link upsert: update metadata (`label`, slot, iccId) but **keep existing `mode`** when the row already exists.
+6. Mobile link upsert: update metadata (`label`, slot, iccId) but **keep existing `mode` and DNS-policy columns** when the row already exists.
 7. `exportSchema` may stay false until a task enables it; do not invent schema JSON.
 
 ## External docs

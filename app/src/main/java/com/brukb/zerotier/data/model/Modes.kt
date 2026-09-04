@@ -27,6 +27,20 @@ enum class LinkMode {
     VPN,
 }
 
+enum class UplinkDnsPreference {
+    WIFI_FIRST,
+    CELLULAR_FIRST,
+    ;
+
+    companion object {
+        fun parse(raw: String?): UplinkDnsPreference {
+            if (raw.isNullOrBlank()) return WIFI_FIRST
+            return entries.firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) }
+                ?: WIFI_FIRST
+        }
+    }
+}
+
 object GlobalModeMigrate {
     fun initial(startOnBoot: Boolean, stored: String?): GlobalMode {
         if (!stored.isNullOrBlank()) return GlobalMode.parse(stored)

@@ -125,6 +125,25 @@ class DnsResolver(
             }
         }
 
+        when (val link = uplink.lookupLinkDns(normalized, FALLBACK_DNS_TIMEOUT_MS)) {
+            is DnsLookupResult.Ok -> {
+                logOk(normalized, "link", link.addresses, t0, domains)
+                return link.addresses
+            }
+            is DnsLookupResult.NxDomain -> return ztNxFallback(normalized, t0, domains)
+            is DnsLookupResult.NoData -> {
+                rememberNegative(normalized)
+                logFail(normalized, "link-nodata", t0, domains)
+                return emptyList()
+            }
+            is DnsLookupResult.Failure -> {
+                ProxyDebugLog.w(
+                    "dns FAIL host=$normalized via=link ms=${elapsedRealtime() - t0} " +
+                        "failOpen=$failOpen ztDomains=$domains err=${link.reason}",
+                )
+            }
+        }
+
         if (failOpen) {
             for (server in fallbackServers) {
                 when (val r = uplink.lookupUdp(server, normalized, FALLBACK_DNS_TIMEOUT_MS)) {

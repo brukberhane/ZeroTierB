@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import com.brukb.zerotier.R
 import com.brukb.zerotier.ZerotierBApplication
 import com.brukb.zerotier.connection.NodeLifecycleStatus
+import com.brukb.zerotier.connection.PhysicalLink
 import com.brukb.zerotier.connection.ztNetworkToRuntime
 import com.brukb.zerotier.connection.ztNodeStateToLifecycle
 import com.brukb.zerotier.data.model.ZerotierBNetwork
@@ -44,6 +45,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -61,6 +63,7 @@ class ProxyModeService : Service() {
 
     private lateinit var nodeManager: ZeroTierNodeManager
     private lateinit var routeResolver: RouteResolver
+    private lateinit var uplinkDnsClient: AndroidUplinkDnsClient
     private lateinit var dnsResolver: DnsResolver
     private lateinit var systemProxyManager: SystemProxyManager
     private val networkConfigs = mutableMapOf<Long, ZerotierBNetwork>()
@@ -84,6 +87,9 @@ class ProxyModeService : Service() {
     private val pausedNetworks = mutableListOf<ZerotierBNetwork>()
     private val lastAppliedRuntime = mutableMapOf<Long, ZtNetworkStatus>()
 
+    @Volatile
+    private var currentDnsPolicy = SystemProxyDnsPolicy.WAN_STANDARD
+
     private val nodeKickCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             AppLog.i(TAG, "node-kick onAvailable")
@@ -104,7 +110,8 @@ class ProxyModeService : Service() {
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         createNotificationChannel()
         routeResolver = RouteResolver()
-        dnsResolver = DnsResolver(AndroidUplinkDnsClient(this))
+        uplinkDnsClient = AndroidUplinkDnsClient(this)
+        dnsResolver = DnsResolver(uplinkDnsClient)
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
         systemProxyManager = SystemProxyManager(this, (application as ZerotierBApplication).preferences)
         idleGate = IdleGate(this) { _, deviceIdle ->
@@ -135,6 +142,7 @@ class ProxyModeService : Service() {
                 AppLog.i(TAG, "dns fallbackServers=$list")
             }
         }
+        scope.launch { collectDnsPolicy() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -301,7 +309,7 @@ class ProxyModeService : Service() {
         dnsResolver.clear()
         lastAppliedRuntime.clear()
 
-        httpProxy = HttpProxyServer(0, routeResolver, dnsResolver, onDied = { onListenDied() }).also { it.start() }
+        httpProxy = newHttpProxyServer().also { it.start() }
         val boundPort = httpProxy?.boundPort ?: -1
         if (boundPort <= 0) {
             fail("HTTP proxy bind failed")
@@ -410,12 +418,59 @@ class ProxyModeService : Service() {
         }
     }
 
+    private fun newHttpProxyServer(): HttpProxyServer =
+        HttpProxyServer(
+            0,
+            routeResolver,
+            dnsResolver,
+            onDied = { onListenDied() },
+            bindUplinkSocket = { uplinkDnsClient.bindTcpToUplink(it) },
+        )
+
+    private suspend fun collectDnsPolicy() {
+        val app = application as ZerotierBApplication
+        combine(
+            combine(
+                app.preferences.globalMode,
+                app.preferences.skipUplinkDnsProbe,
+                app.preferences.uplinkDnsHeal,
+                app.preferences.uplinkDnsPreference,
+            ) { mode, skip, heal, pref ->
+                mode to SystemProxyDnsPolicy(skip, heal, pref)
+            },
+            app.orchestrator.state,
+            app.linkProfileRepository.observeAll(),
+        ) { modeAndPrefs, orch, profiles ->
+            val (mode, stored) = modeAndPrefs
+            val link = orch.lastLink ?: PhysicalLink.None
+            val profile = profileForPhysicalLink(link, profiles)
+            resolveSystemProxyDnsPolicy(mode, link, stored, profile)
+        }.collect { policy ->
+            val wasSkip = currentDnsPolicy.skipUplinkDnsProbe
+            currentDnsPolicy = policy
+            uplinkDnsClient.healEnabled = policy.healEnabled
+            uplinkDnsClient.preference = policy.preference
+            AppLog.i(
+                TAG,
+                "dns policy skip=${policy.skipUplinkDnsProbe} heal=${policy.healEnabled} pref=${policy.preference}",
+            )
+            if (policy.skipUplinkDnsProbe && !wasSkip) {
+                nodeKick.tryEmit(Unit)
+            }
+            if (!policy.skipUplinkDnsProbe && _state.value.systemProxyActive) {
+                AppLog.i(TAG, "sysproxy skipProbe=false (leave Global on)")
+            }
+        }
+    }
+
     private suspend fun runSystemProxyEnableLoop(port: Int) {
         var backoff = 0L
         while (currentCoroutineContext().isActive && _state.value.isRunning) {
             if (_state.value.systemProxyActive) return
             if (port <= 0) return
-            if (probeUplinkDns()) {
+            val skip = currentDnsPolicy.skipUplinkDnsProbe
+            val ready = skip || probeUplinkDns()
+            if (ready) {
                 systemProxyManager.enable(port)
                     .onSuccess {
                         updateState {
@@ -695,7 +750,7 @@ class ProxyModeService : Service() {
             return
         }
         runCatching {
-            httpProxy = HttpProxyServer(0, routeResolver, dnsResolver, onDied = { onListenDied() }).also { it.start() }
+            httpProxy = newHttpProxyServer().also { it.start() }
             val boundPort = httpProxy?.boundPort ?: -1
             if (boundPort <= 0) error("HTTP proxy rebind failed")
             val app = application as ZerotierBApplication

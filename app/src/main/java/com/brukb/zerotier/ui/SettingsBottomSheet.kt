@@ -42,6 +42,9 @@ fun SettingsBottomSheet(
     startOnBoot: Boolean,
     watchdogEnabled: Boolean,
     pauseNodeInDoze: Boolean,
+    skipUplinkDnsProbe: Boolean,
+    uplinkDnsHeal: Boolean,
+    preferWifiDns: Boolean,
     dnsFailOpen: Boolean,
     dnsFallbackServers: List<String>,
     verboseFileLog: Boolean,
@@ -54,6 +57,9 @@ fun SettingsBottomSheet(
     onStartOnBoot: (Boolean) -> Unit,
     onWatchdogEnabled: (Boolean) -> Boolean,
     onPauseNodeInDoze: (Boolean) -> Unit,
+    onSkipUplinkDnsProbe: (Boolean) -> Unit,
+    onUplinkDnsHeal: (Boolean) -> Unit,
+    onPreferWifiDns: (Boolean) -> Unit,
     onDnsFailOpen: (Boolean) -> Unit,
     onDnsFallbackServers: (List<String>) -> Unit,
     onVerboseFileLog: (Boolean) -> Unit,
@@ -171,6 +177,15 @@ fun SettingsBottomSheet(
                 }
 
                 SettingsSection(title = stringResource(R.string.settings_section_advanced)) {
+                    SystemProxyDnsPolicyControls(
+                        skipUplinkDnsProbe = skipUplinkDnsProbe,
+                        healEnabled = uplinkDnsHeal,
+                        preferWifiDns = preferWifiDns,
+                        onSkip = onSkipUplinkDnsProbe,
+                        onHeal = onUplinkDnsHeal,
+                        onPreferWifi = onPreferWifiDns,
+                        showScopeHint = true,
+                    )
                     SettingsSwitchRow(
                         label = stringResource(R.string.dns_fail_open_title),
                         checked = dnsFailOpen,
@@ -312,6 +327,7 @@ private fun SettingsSwitchRow(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -319,6 +335,58 @@ private fun SettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+@Composable
+fun SystemProxyDnsPolicyControls(
+    skipUplinkDnsProbe: Boolean,
+    healEnabled: Boolean,
+    preferWifiDns: Boolean,
+    onSkip: (Boolean) -> Unit,
+    onHeal: (Boolean) -> Unit,
+    onPreferWifi: (Boolean) -> Unit,
+    showScopeHint: Boolean,
+) {
+    SettingsSwitchRow(
+        label = stringResource(R.string.dns_skip_probe_title),
+        checked = skipUplinkDnsProbe,
+        onCheckedChange = onSkip,
+    )
+    Text(
+        stringResource(R.string.dns_skip_probe_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (showScopeHint) {
+        Text(
+            stringResource(R.string.dns_proxy_scope_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (skipUplinkDnsProbe) {
+        SettingsSwitchRow(
+            label = stringResource(R.string.dns_heal_title),
+            checked = healEnabled,
+            onCheckedChange = onHeal,
+        )
+        Text(
+            stringResource(R.string.dns_heal_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SettingsSwitchRow(
+            label = stringResource(R.string.dns_prefer_wifi_title),
+            checked = preferWifiDns,
+            onCheckedChange = onPreferWifi,
+            enabled = healEnabled,
+        )
+        Text(
+            stringResource(R.string.dns_prefer_wifi_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

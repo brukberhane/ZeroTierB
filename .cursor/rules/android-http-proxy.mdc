@@ -17,11 +17,12 @@ Does **not** cover: Shizuku process (shizuku.mdc), APN editor (forbidden).
 
 ## Invariants
 
-1. Enable order: bind 127.0.0.1 → **uplink DNS probe** (`DnsResolver.resolve` on public host returns non-empty) → `putString(HTTP_PROXY, "127.0.0.1:$port")`. Listen may be up before NODE_UP; Global enable is **sticky** once probe succeeds.
-2. Disable: restore saved value or `:0`.
-3. Force-stop may skip `onDestroy`. Next process start: if runtime ≠ PROXY, `disable()`.
-4. No APN `proxy`/`port` writes in v1.
-5. PROXY is convenience, not a leak-proof tunnel. Apps may ignore Global (HTTP/3, custom stacks).
+1. Enable order: bind 127.0.0.1, then `putString(HTTP_PROXY, "127.0.0.1:$port")`. Listen may be up before NODE_UP. **When** to write Global is not the same as **how** public names resolve (heal). Default: probe (`example.com` / `one.one.one.one` via uplink resolve, non-empty) then enable. Opt-in skip-probe: enable at listen (air-gapped overlay via system proxy). Sticky once enabled.
+2. Do **not** clear Global because a later public-DNS probe failed. Overlay IP/ZT-DNS CONNECT still works; probe hosts are WAN names. Un-stick + `NetworkCallback` abort of backoff chatters `http_proxy`.
+3. Disable: restore saved value or `:0` (OFF/swap/STOP only).
+4. Force-stop may skip `onDestroy`. Next process start: if runtime ≠ PROXY, `disable()`.
+5. No APN `proxy`/`port` writes in v1.
+6. PROXY is convenience, not a leak-proof tunnel. Apps may ignore Global (HTTP/3, custom stacks).
 
 ## External docs
 
@@ -77,7 +78,7 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Kindle/Fire OS shows no internet; `tabletcaptiveportal.com` 502; Wi-Fi never validates; ZT node may still be ONLINE | Global `HTTP_PROXY` set **before** our `DnsResolver` can resolve public names (netd timeout / `no uplink` on unvalidated Wi-Fi). Captive HTTP then goes through us → empty resolve → 502. Chicken-egg: VALIDATED never comes while we intercept | **Listen** on 127.0.0.1 before NODE_UP (T16). **Defer `enable()`** until `SystemProxyEnablePolicy` probe (`example.com` / `one.one.one.one` via `dnsResolver.resolve`) returns addresses — captive checks stay direct until then. Sticky once enabled. Node retry must not `httpProxy.stop()` or `disable()` while PROXY wanted. Kick on `onAvailable` / INTERNET — **not** `NET_CAPABILITY_VALIDATED` as enable trigger (VALIDATED can be true on direct path while our netd still times out) |
+| Kindle/Fire OS shows no internet; `tabletcaptiveportal.com` 502; Wi-Fi never validates; ZT node may still be ONLINE | Global `HTTP_PROXY` set **before** uplink resolve can return public names (netd timeout / `no uplink` on unvalidated Wi-Fi). Captive HTTP then goes through us → empty resolve → 502. Chicken-egg: VALIDATED never comes while we intercept | **Listen** on 127.0.0.1 before NODE_UP (T16). **Default:** defer `enable()` until public-name probe returns addresses — captive checks stay direct. **Skip-probe** (Settings / AUTO per PROXY link): enable at listen for air-gap. Sticky. Node retry must not stop listen or `disable()` while PROXY wanted. Kick on `onAvailable` / INTERNET — **not** `NET_CAPABILITY_VALIDATED` as enable trigger |
 
 <!-- last-verified: 2026-09 -->
 
@@ -85,9 +86,19 @@ Permission: `android.permission.WRITE_SECURE_SETTINGS`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| Every CONNECT 502; logs `dns FAIL via=netd timeout` or `no uplink`; `ztDomains=-`; zero `dns host=` successes; overlay join OK | Apps use Global proxy; we must resolve first. Netd on captive/unvalidated net fails; `failOpen` with empty `fallbackServers` returns `[]`. ZT ONLINE does not help — roots are UDP, not `getAllByName` | Defer Global enable until probe Ok (above). OFF/swap: `disable()` first (T16). Optional later: Settings UDP fallbacks — does not fix `no uplink` |
+| Every CONNECT 502; logs `dns FAIL via=netd timeout` or `ENONET`; `ztDomains=-`; overlay join OK | Apps honor Global; we must resolve then TCP. Health check is **CONNECT to a probe host**, not DNS-through-HTTP. Netd on `activeNetwork` ENONET while unvalidated Wi-Fi sits in `allNetworks`. Empty Settings fallbacks → UDP loop is a no-op | **Heal** (WAN default): scan non-VPN `allNetworks` (Wi-Fi vs cell preference), netd then UDP to that net’s DHCP DNS, `bindSocket` uplink TCP. User fallback IPs still after that. Do **not** un-stick Global on probe fail. OFF/swap: `disable()` first (T16) |
 
 <!-- last-verified: 2026-09 -->
+
+### `Un-stick Global on failed DNS probe`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Air-gapped / WAN-DNS-down overlay HTTP via system proxy dies; or `http_proxy` chatters `127.0.0.1:port` ↔ `:0` | Public-name probe (`example.com`) used as liveness for Global. Overlay IPs never needed that probe. Consecutive fails + capability `onAvailable` aborting backoff makes 2 fails / 2 oks sub-second | Keep Global sticky after enable. Air-gap: skip-probe opt-in. Heal public DNS separately. Never `disable()` from Doze pause |
+
+<!-- last-verified: 2026-09 -->
+
+### `Stale adb forward empty reply`
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |

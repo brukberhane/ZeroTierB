@@ -30,6 +30,7 @@ class HttpProxyServer(
     private val routeResolver: RouteResolver,
     private val dnsResolver: DnsResolver,
     private val onDied: () -> Unit = {},
+    private val bindUplinkSocket: (Socket) -> Unit = {},
 ) {
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
@@ -68,6 +69,7 @@ class HttpProxyServer(
                                 client,
                                 routeResolver,
                                 dnsResolver,
+                                bindUplinkSocket,
                             ).handle()
                         }.onFailure {
                             AppLog.w(TAG, "session failed", it)
@@ -107,6 +109,7 @@ class HttpProxySession(
     private val client: Socket,
     private val routeResolver: RouteResolver,
     private val dnsResolver: DnsResolver,
+    private val bindUplinkSocket: (Socket) -> Unit = {},
 ) {
     fun handle() {
         client.tcpNoDelay = true
@@ -341,6 +344,7 @@ class HttpProxySession(
             val socket = Socket()
             socket.tcpNoDelay = true
             try {
+                bindUplinkSocket(socket)
                 socket.connect(InetSocketAddress(ip, port), 15_000)
             } catch (e: Exception) {
                 val ms = android.os.SystemClock.elapsedRealtime() - t0

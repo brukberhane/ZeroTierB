@@ -56,6 +56,7 @@ class DnsResolverTest {
         uplink.netdResult = DnsLookupResult.Ok(example)
         assertEquals(example, resolver.resolve("www.example.com"))
         assertEquals(0, uplink.udpCalls)
+        assertEquals(0, uplink.linkCalls)
     }
 
     @Test
@@ -66,6 +67,7 @@ class DnsResolverTest {
         uplink.udpResults["8.8.8.8:www.example.com"] = DnsLookupResult.Ok(fallbackIp)
         assertEquals(fallbackIp, resolver.resolve("www.example.com"))
         assertEquals(1, uplink.udpCalls)
+        assertEquals(1, uplink.linkCalls)
     }
 
     @Test
@@ -75,6 +77,7 @@ class DnsResolverTest {
         uplink.netdResult = DnsLookupResult.Failure("timeout")
         assertTrue(resolver.resolve("www.example.com").isEmpty())
         assertEquals(0, uplink.udpCalls)
+        assertEquals(1, uplink.linkCalls)
     }
 
     @Test
@@ -116,6 +119,7 @@ class DnsResolverTest {
         uplink.netdResult = DnsLookupResult.NoData
         assertTrue(resolver.resolve("blocked.example.com").isEmpty())
         assertEquals(0, uplink.udpCalls)
+        assertEquals(0, uplink.linkCalls)
         assertEquals(0, ztCalls)
     }
 
@@ -124,6 +128,7 @@ class DnsResolverTest {
         addZtBackend(domain = "zt.example") { DnsLookupResult.Ok(example) }
         uplink.netdResult = DnsLookupResult.Failure("timeout")
         assertTrue(resolver.resolve("www.example.com").isEmpty())
+        assertEquals(1, uplink.linkCalls)
     }
 
     @Test
@@ -146,6 +151,33 @@ class DnsResolverTest {
         uplink.netdResult = DnsLookupResult.Ok(example)
         assertEquals(example, resolver.resolve("slow.example.com"))
         assertEquals(1, uplink.netdCalls)
+    }
+
+    @Test
+    fun netdFailure_linkOk_evenWhenFailClosed() {
+        resolver.failOpen = false
+        resolver.fallbackServers = listOf(InetAddress.getByName("8.8.8.8"))
+        uplink.netdResult = DnsLookupResult.Failure("timeout")
+        uplink.linkResult = DnsLookupResult.Ok(example)
+        assertEquals(example, resolver.resolve("www.example.com"))
+        assertEquals(0, uplink.udpCalls)
+        assertEquals(1, uplink.linkCalls)
+    }
+
+    @Test
+    fun netdFailure_linkNx_goesZtNx() {
+        addZtBackend(domain = "zt.example") { DnsLookupResult.Ok(example) }
+        uplink.netdResult = DnsLookupResult.Failure("timeout")
+        uplink.linkResult = DnsLookupResult.NxDomain
+        assertEquals(example, resolver.resolve("www.example.com"))
+        assertEquals(1, uplink.linkCalls)
+    }
+
+    @Test
+    fun netdOk_skipsLink() {
+        uplink.netdResult = DnsLookupResult.Ok(example)
+        assertEquals(example, resolver.resolve("www.example.com"))
+        assertEquals(0, uplink.linkCalls)
     }
 
     @Test
@@ -232,6 +264,8 @@ class DnsResolverTest {
         var udpCalls = 0
         var netdLatch: CountDownLatch? = null
         val udpResults = mutableMapOf<String, DnsLookupResult>()
+        var linkResult: DnsLookupResult = DnsLookupResult.Failure("no link dns")
+        var linkCalls = 0
 
         override fun lookupNetd(host: String, timeoutMs: Int): DnsLookupResult {
             netdCalls++
@@ -242,6 +276,11 @@ class DnsResolverTest {
         override fun lookupUdp(server: InetAddress, host: String, timeoutMs: Int): DnsLookupResult {
             udpCalls++
             return udpResults["${server.hostAddress}:$host"] ?: DnsLookupResult.Failure("unset")
+        }
+
+        override fun lookupLinkDns(host: String, timeoutMs: Int): DnsLookupResult {
+            linkCalls++
+            return linkResult
         }
     }
 }

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.GlobalModeMigrate
+import com.brukb.zerotier.data.model.UplinkDnsPreference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -29,6 +30,9 @@ class AppPreferences(private val context: Context) {
     private val dnsFailOpenKey = booleanPreferencesKey("dns_fail_open")
     private val dnsFallbackServersKey = stringPreferencesKey("dns_fallback_servers")
     private val verboseFileLogKey = booleanPreferencesKey("verbose_file_log")
+    private val skipUplinkDnsProbeKey = booleanPreferencesKey("skip_uplink_dns_probe")
+    private val uplinkDnsHealKey = booleanPreferencesKey("uplink_dns_heal")
+    private val uplinkDnsPreferenceKey = stringPreferencesKey("uplink_dns_preference")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -54,6 +58,15 @@ class AppPreferences(private val context: Context) {
     }
     val verboseFileLog: Flow<Boolean> = context.dataStore.data.map {
         it[verboseFileLogKey] ?: false
+    }
+    val skipUplinkDnsProbe: Flow<Boolean> = context.dataStore.data.map {
+        it[skipUplinkDnsProbeKey] ?: false
+    }
+    val uplinkDnsHeal: Flow<Boolean> = context.dataStore.data.map {
+        it[uplinkDnsHealKey] ?: true
+    }
+    val uplinkDnsPreference: Flow<UplinkDnsPreference> = context.dataStore.data.map {
+        UplinkDnsPreference.parse(it[uplinkDnsPreferenceKey])
     }
 
     suspend fun setStartOnBoot(enabled: Boolean) {
@@ -115,6 +128,18 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setVerboseFileLog(enabled: Boolean) {
         context.dataStore.edit { it[verboseFileLogKey] = enabled }
+    }
+
+    suspend fun setSkipUplinkDnsProbe(enabled: Boolean) {
+        context.dataStore.edit { it[skipUplinkDnsProbeKey] = enabled }
+    }
+
+    suspend fun setUplinkDnsHeal(enabled: Boolean) {
+        context.dataStore.edit { it[uplinkDnsHealKey] = enabled }
+    }
+
+    suspend fun setUplinkDnsPreference(value: UplinkDnsPreference) {
+        context.dataStore.edit { it[uplinkDnsPreferenceKey] = value.name }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

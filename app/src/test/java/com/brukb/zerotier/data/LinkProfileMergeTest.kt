@@ -50,6 +50,27 @@ class LinkProfileMergeTest {
     }
 
     @Test
+    fun mergeMobile_keepsSkipUplinkDnsProbe() {
+        val existing = LinkProfile(
+            id = "mobile-2",
+            kind = LinkKind.MOBILE,
+            mode = LinkMode.PROXY,
+            subscriptionId = 2,
+            skipUplinkDnsProbe = true,
+            uplinkDnsHealEnabled = false,
+        )
+        val merged = LinkProfile.mergeMobile(
+            existing = existing,
+            subscriptionId = 2,
+            simSlotIndex = 1,
+            label = "New",
+            iccId = null,
+        )
+        assertEquals(true, merged.skipUplinkDnsProbe)
+        assertEquals(false, merged.uplinkDnsHealEnabled)
+    }
+
+    @Test
     fun mergeWifi_newDefaultsToProxy() {
         val merged = LinkProfile.mergeWifi(null, "HomeWiFi", LinkMode.PROXY)
         assertEquals("wifi-HomeWiFi", merged.id)

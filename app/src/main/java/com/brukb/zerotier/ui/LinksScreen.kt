@@ -37,6 +37,7 @@ import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.model.LinkKind
 import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.data.model.LinkProfile
+import com.brukb.zerotier.data.model.UplinkDnsPreference
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,8 +79,11 @@ fun LinksScreen(
                 wifi.forEach { profile ->
                     LinkProfileRow(
                         title = profile.ssid ?: profile.label.ifBlank { profile.id },
-                        mode = profile.mode,
+                        profile = profile,
                         onMode = { viewModel.setLinkMode(profile, it) },
+                        onDnsPolicy = { skip, heal, wifi ->
+                            viewModel.setLinkDnsPolicy(profile, skip, heal, wifi)
+                        },
                         onDelete = { viewModel.deleteWifiProfile(profile) },
                     )
                 }
@@ -87,8 +91,11 @@ fun LinksScreen(
                 sims.forEach { profile ->
                     LinkProfileRow(
                         title = profile.label.ifBlank { "SIM ${profile.subscriptionId}" },
-                        mode = profile.mode,
+                        profile = profile,
                         onMode = { viewModel.setLinkMode(profile, it) },
+                        onDnsPolicy = { skip, heal, wifi ->
+                            viewModel.setLinkDnsPolicy(profile, skip, heal, wifi)
+                        },
                         onDelete = null,
                     )
                 }
@@ -96,8 +103,11 @@ fun LinksScreen(
                 other.forEach { profile ->
                     LinkProfileRow(
                         title = profile.label.ifBlank { stringResource(R.string.other_section) },
-                        mode = profile.mode,
+                        profile = profile,
                         onMode = { viewModel.setLinkMode(profile, it) },
+                        onDnsPolicy = { skip, heal, wifi ->
+                            viewModel.setLinkDnsPolicy(profile, skip, heal, wifi)
+                        },
                         onDelete = null,
                     )
                 }
@@ -125,8 +135,9 @@ fun LinksScreen(
 @Composable
 private fun LinkProfileRow(
     title: String,
-    mode: LinkMode,
+    profile: LinkProfile,
     onMode: (LinkMode) -> Unit,
+    onDnsPolicy: (skip: Boolean, heal: Boolean, preferWifi: Boolean) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     val modes = LinkMode.entries
@@ -143,13 +154,43 @@ private fun LinkProfileRow(
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 modes.forEachIndexed { index, m ->
                     SegmentedButton(
-                        selected = mode == m,
+                        selected = profile.mode == m,
                         onClick = { onMode(m) },
                         shape = SegmentedButtonDefaults.itemShape(index, modes.size),
                     ) {
                         Text(m.name)
                     }
                 }
+            }
+            if (profile.mode == LinkMode.PROXY) {
+                Text(
+                    stringResource(R.string.dns_link_proxy_options),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SystemProxyDnsPolicyControls(
+                    skipUplinkDnsProbe = profile.skipUplinkDnsProbe,
+                    healEnabled = profile.uplinkDnsHealEnabled,
+                    preferWifiDns = profile.uplinkDnsPreference == UplinkDnsPreference.WIFI_FIRST,
+                    onSkip = {
+                        onDnsPolicy(
+                            it,
+                            profile.uplinkDnsHealEnabled,
+                            profile.uplinkDnsPreference == UplinkDnsPreference.WIFI_FIRST,
+                        )
+                    },
+                    onHeal = {
+                        onDnsPolicy(
+                            profile.skipUplinkDnsProbe,
+                            it,
+                            profile.uplinkDnsPreference == UplinkDnsPreference.WIFI_FIRST,
+                        )
+                    },
+                    onPreferWifi = {
+                        onDnsPolicy(profile.skipUplinkDnsProbe, profile.uplinkDnsHealEnabled, it)
+                    },
+                    showScopeHint = false,
+                )
             }
         }
     }
