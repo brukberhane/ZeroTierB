@@ -348,7 +348,7 @@ class ProxyModeService : Service() {
             }
 
             val nodeId = nodeManager.state.value.nodeId
-            val up = nodeId != null && nodeId != 0L
+            val up = nodeId != null && ZeroTierNodeManager.isValidNodeId(nodeId)
             if (!up) {
                 nodeManager.initialize()
                 val startResult = nodeManager.start(shouldAbort = shouldAbort)
@@ -558,7 +558,7 @@ class ProxyModeService : Service() {
         if (nodePausedForDoze) return
         val lifecycle = ztNodeStateToLifecycle(nodeState, pausedDoze = false)
         val formattedId = nodeState.nodeId
-            ?.takeIf { it != 0L }
+            ?.takeIf { ZeroTierNodeManager.isValidNodeId(it) }
             ?.let { ZeroTierNodeManager.formatNodeId(it) }
         val statuses = nodeState.networks.map { (id, zt) -> ztNetworkToRuntime(id, zt) }
         updateState {

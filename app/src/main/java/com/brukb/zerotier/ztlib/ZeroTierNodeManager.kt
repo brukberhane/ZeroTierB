@@ -77,11 +77,19 @@ class ZeroTierNodeManager(
             periodMs = 50L,
             shouldAbort = shouldAbort,
             nowMs = { SystemClock.elapsedRealtime() },
-            predicate = { withNode { node.id != 0L } },
+            predicate = { withNode { isValidNodeId(node.id) } },
         )
         return when (up) {
             PollUntilResult.Yes -> {
                 val nodeId = withNode { node.id }
+                if (!isValidNodeId(nodeId)) {
+                    val error = IllegalStateException(
+                        "Node did not come up within ${NODE_UP_TIMEOUT_MS}ms",
+                    )
+                    AppLog.e(TAG, "start failed", error)
+                    _state.value = _state.value.copy(lastError = error.message)
+                    return Result.failure(error)
+                }
                 _state.value = _state.value.copy(
                     isOnline = withNode { node.isOnline },
                     nodeId = nodeId,
@@ -116,7 +124,7 @@ class ZeroTierNodeManager(
 
     suspend fun join(networkId: Long, config: ZerotierBNetwork? = null): Result<Unit> = withNode {
         runCatching {
-            check(node.id != 0L) { "Node not up — cannot join" }
+            check(isValidNodeId(node.id)) { "Node not up — cannot join" }
             config?.let {
                 val settingsResult = ZtNetworkQuery.setNetworkSettings(
                     networkId,
@@ -232,12 +240,18 @@ class ZeroTierNodeManager(
         when (eventCode) {
             ZeroTierNative.ZTS_EVENT_NODE_UP -> {
                 val nodeId = node.id
-                _state.value = _state.value.copy(nodeId = nodeId.takeIf { it != 0L } ?: _state.value.nodeId)
-                AppLog.i(TAG, "node UP id=${formatNodeId(nodeId)}")
+                _state.value = _state.value.copy(
+                    nodeId = nodeId.takeIf { isValidNodeId(it) } ?: _state.value.nodeId,
+                )
+                AppLog.i(TAG, "node UP id=${formatNodeIdentity(nodeId)}")
             }
             ZeroTierNative.ZTS_EVENT_NODE_ONLINE -> {
-                _state.value = _state.value.copy(isOnline = true, nodeId = node.id)
-                AppLog.i(TAG, "node ONLINE id=${formatNodeId(node.id)}")
+                val nodeId = node.id
+                _state.value = _state.value.copy(
+                    isOnline = true,
+                    nodeId = nodeId.takeIf { isValidNodeId(it) } ?: _state.value.nodeId,
+                )
+                AppLog.i(TAG, "node ONLINE id=${formatNodeIdentity(nodeId)}")
             }
             ZeroTierNative.ZTS_EVENT_NODE_OFFLINE -> {
                 _state.value = _state.value.copy(isOnline = false)
@@ -332,5 +346,13 @@ class ZeroTierNodeManager(
         private const val NODE_UP_TIMEOUT_MS = 10_000L
 
         fun formatNodeId(nodeId: Long): String = String.format("%010x", nodeId)
+
+        fun formatNodeIdentity(nodeId: Long): String =
+            if (isValidNodeId(nodeId)) formatNodeId(nodeId) else "invalid($nodeId)"
+
+        /** 40-bit ZeroTier address. libzt `zts_node_get_id` returns `ZTS_ERR_*` (e.g. -2) when down. */
+        fun isValidNodeId(nodeId: Long): Boolean = nodeId in 1L..MAX_ZT_ADDRESS
+
+        private const val MAX_ZT_ADDRESS = 0xFFFFFFFFFFL
     }
 }
