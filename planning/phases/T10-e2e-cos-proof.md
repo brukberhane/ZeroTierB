@@ -2,13 +2,13 @@
 
 **Status**: Pending  
 **Parent INDEX**: [INDEX.md](./INDEX.md)  
-**Depends-on**: T16  
+**Depends-on**: T20  
 **Next**: —  
 **Layer**: L8
 
 ## Description
 
-Holistic verification of docs/PROXY-VPN-PLAN.md test matrix. Record what OEM honors Global on LTE. Tighten README. No new features.
+Holistic verification of docs/PROXY-VPN-PLAN.md test matrix. Record what OEM honors Global on LTE. Tighten README. No new features. After T20, include Roots: moons on PROXY+VPN, Earth vs Custom vs Dummy (airgap), identity files untouched, LAN/moon path without public Earth.
 
 ## Status History
 

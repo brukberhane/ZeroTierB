@@ -7,6 +7,8 @@ import com.brukb.zerotier.data.AppDatabase
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
+import com.brukb.zerotier.data.RootsFileStore
+import com.brukb.zerotier.data.RootsRepository
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.proxy.SystemProxyManager
 import com.brukb.zerotier.system.LinkObserver
@@ -34,6 +36,9 @@ class ZerotierBApplication : Application() {
     lateinit var preferences: AppPreferences
         private set
 
+    lateinit var rootsRepository: RootsRepository
+        private set
+
     lateinit var orchestrator: ConnectionOrchestrator
         private set
 
@@ -51,6 +56,10 @@ class ZerotierBApplication : Application() {
         database = AppDatabase.getInstance(this)
         networkRepository = NetworkRepository(database.networkDao())
         linkProfileRepository = LinkProfileRepository(database.linkProfileDao())
+        rootsRepository = RootsRepository(
+            database.moonDao(),
+            RootsFileStore(File(filesDir, "zt-worlds")),
+        )
         preferences = AppPreferences(this)
         orchestrator = ConnectionOrchestrator(
             context = this,

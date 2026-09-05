@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.GlobalModeMigrate
+import com.brukb.zerotier.data.model.PlanetSource
 import com.brukb.zerotier.data.model.UplinkDnsPreference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -34,6 +35,9 @@ class AppPreferences(private val context: Context) {
     private val skipUplinkDnsProbeKey = booleanPreferencesKey("skip_uplink_dns_probe")
     private val uplinkDnsHealKey = booleanPreferencesKey("uplink_dns_heal")
     private val uplinkDnsPreferenceKey = stringPreferencesKey("uplink_dns_preference")
+    private val airgapKey = booleanPreferencesKey("airgap")
+    private val airgapWithoutMoonsKey = booleanPreferencesKey("airgap_without_moons")
+    private val planetSourceKey = stringPreferencesKey("planet_source")
 
     val startOnBoot: Flow<Boolean> = context.dataStore.data.map { it[startOnBootKey] ?: false }
     val vpnAlwaysOn: Flow<Boolean> = context.dataStore.data.map { it[vpnAlwaysOnKey] ?: false }
@@ -71,6 +75,13 @@ class AppPreferences(private val context: Context) {
     }
     val uplinkDnsPreference: Flow<UplinkDnsPreference> = context.dataStore.data.map {
         UplinkDnsPreference.parse(it[uplinkDnsPreferenceKey])
+    }
+    val airgap: Flow<Boolean> = context.dataStore.data.map { it[airgapKey] ?: false }
+    val airgapWithoutMoons: Flow<Boolean> = context.dataStore.data.map {
+        it[airgapWithoutMoonsKey] ?: false
+    }
+    val planetSource: Flow<PlanetSource> = context.dataStore.data.map {
+        PlanetSource.parse(it[planetSourceKey])
     }
 
     suspend fun setStartOnBoot(enabled: Boolean) {
@@ -148,6 +159,18 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setUplinkDnsPreference(value: UplinkDnsPreference) {
         context.dataStore.edit { it[uplinkDnsPreferenceKey] = value.name }
+    }
+
+    suspend fun setAirgap(enabled: Boolean) {
+        context.dataStore.edit { it[airgapKey] = enabled }
+    }
+
+    suspend fun setAirgapWithoutMoons(enabled: Boolean) {
+        context.dataStore.edit { it[airgapWithoutMoonsKey] = enabled }
+    }
+
+    suspend fun setPlanetSource(value: PlanetSource) {
+        context.dataStore.edit { it[planetSourceKey] = value.name }
     }
 
     suspend fun migrateGlobalModeIfNeeded() {

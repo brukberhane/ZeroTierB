@@ -24,8 +24,12 @@
 | T13   | [Settings bottom sheet sections](./T13-settings-bottom-sheet-sections.md)            | ✅       | T12        | T14   | L7    | UI rewrite phase C — settings UX                           |
 | T14   | [Network detail live runtime](./T14-network-detail-live-runtime.md)                  | ✅       | T13        | T15   | L7    | UI rewrite phase D — routes/DNS                            |
 | T15   | [UI polish: motion, empty states, copy](./T15-ui-polish-motion-empty-states.md)      | ✅       | T14        | T16   | L7    | UI polish phase E — polish                                |
-| T16   | [PROXY OFF heal + abortable node retry](./T16-proxy-off-heal-node-retry.md)          | ✅       | T15        | T10   | L6    | A+C+2+4: disable HTTP_PROXY first; bind-before-NODE_UP; retry |
-| T10   | [E2E / CoS proof](./T10-e2e-cos-proof.md)                                            | Pending | T16        | —     | L8    | Run after UI rewrite A–E + T16                             |
+| T16   | [PROXY OFF heal + abortable node retry](./T16-proxy-off-heal-node-retry.md)          | ✅       | T15        | T17   | L6    | A+C+2+4: disable HTTP_PROXY first; bind-before-NODE_UP; retry |
+| T17   | [Roots persistence + world parse](./T17-roots-persistence-world-parse.md)            | ✅       | T16        | T18   | L1    | Room v5 moons; DataStore airgap/planetSource; zt-worlds files |
+| T18   | [libzt moon store + set_roots + Dummy planet](./T18-libzt-moon-store-set-roots.md)    | Pending | T17        | T19   | L4    | pylon submodule; no Topology skip; AAR rebuild               |
+| T19   | [Apply roots on PROXY + VPN start](./T19-roots-apply-both-stacks.md)                  | Pending | T18        | T20   | L6    | Stage Earth/Custom/Dummy; orbit moons; identity allowlist    |
+| T20   | [Roots settings screen](./T20-roots-settings-screen.md)                              | Pending | T19        | T10   | L7    | Nested Roots from Settings; SAF + id+seed; airgap latch      |
+| T10   | [E2E / CoS proof](./T10-e2e-cos-proof.md)                                            | Pending | T20        | —     | L8    | Run after UI rewrite A–E + T16 + Roots T17–T20               |
 
 
 ## Layer legend
@@ -43,7 +47,7 @@
 | L8    | E2E proof                                     |
 
 
-**ID scheme:** `T11.5` is a decimal insert between T11 and T12 (dot in INDEX id and filename). Do not flatten to `T115`. Chain: T09 → T11 → T11.5 → T12 → T13 → T14 → T15 → T10.
+**ID scheme:** `T11.5` is a decimal insert between T11 and T12 (dot in INDEX id and filename). Do not flatten to `T115`. Chain: T09 → T11 → T11.5 → T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T10.
 
 ## How to work
 

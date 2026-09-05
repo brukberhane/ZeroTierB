@@ -47,3 +47,16 @@ object GlobalModeMigrate {
         return if (startOnBoot) GlobalMode.VPN else GlobalMode.OFF
     }
 }
+
+enum class PlanetSource {
+    EARTH,
+    CUSTOM,
+    ;
+
+    companion object {
+        fun parse(raw: String?): PlanetSource {
+            if (raw.isNullOrBlank()) return EARTH
+            return entries.firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) } ?: EARTH
+        }
+    }
+}

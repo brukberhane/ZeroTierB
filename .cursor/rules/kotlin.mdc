@@ -68,3 +68,19 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 | Same idle/restart bug returns after a “fixed” build | Fix lived only in a Service/JNI path with no assertion | Extract the decision (valid id, event-up, status map) into a pure function and table-test old vs new behavior |
 
 <!-- last-verified: 2026-09 -->
+
+### `JSONObject in JVM unit tests`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `WorldBlobParserTest` / moon JSON tests crash with stub exceptions | `org.json.JSONObject` is not available on the JVM unit-test classpath | Hand-parse JSON strings (regex/scanner); keep parser pure Kotlin |
+
+<!-- last-verified: 2026-09 -->
+
+### `byteArrayOf high-byte literals`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Unit test compile error: `Int` but `Byte` expected in `byteArrayOf(0xde, …)` | Kotlin `byteArrayOf` requires `Byte`; literals >127 overflow signed `Byte` | Use `0xde.toByte()` (or negative byte literals) for World blob fixtures |
+
+<!-- last-verified: 2026-09 -->

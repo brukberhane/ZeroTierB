@@ -8,20 +8,21 @@ alwaysApply: false
 
 ## Scope
 
-- `AppDatabase`, `ZerotierBNetwork`, `LinkProfile`, DAOs, migrations
+- `AppDatabase`, `ZerotierBNetwork`, `LinkProfile`, `Moon`, DAOs, migrations
 - DataStore is **not** Room (`AppPreferences`) — keep modes there unless a task moves them
 
 Does **not** cover: Compose list UI.
 
 ## Invariants
 
-1. Never bump `version` without a `Migration`. No `fallbackToDestructiveMigration` for shipped users. Room **v4** ships `MIGRATION_1_2` + `MIGRATION_2_3` + `MIGRATION_3_4` (networks pin/createdAt + `link_profiles` + per-link system-proxy DNS policy).
+1. Never bump `version` without a `Migration`. No `fallbackToDestructiveMigration` for shipped users. Room **v5** ships `MIGRATION_1_2` … `MIGRATION_4_5` (v5 adds `moons` table).
 2. `link_profiles` is physical links, not ZT nets. Seed `other` / PROXY; unknown Wi‑Fi SSID must **not** auto-insert rows (handled in AUTO/classifier tasks).
 3. Pin-main: one row `isPinnedMain=1`. Clear others in the same transaction (`setPinnedMain`).
 4. Main net among enabled: pin wins; else oldest real `createdAt`; `createdAt=0` sorts last, then `networkId`.
 5. On network insert, set `createdAt` if unset; on upsert keep existing `createdAt` / pin unless `setPinnedMain`.
 6. Mobile link upsert: update metadata (`label`, slot, iccId) but **keep existing `mode` and DNS-policy columns** when the row already exists.
 7. `exportSchema` may stay false until a task enables it; do not invent schema JSON.
+8. `moons` table: `worldId` 16-hex PK; max **16** rows (enforce in repository/policy); `MoonDao.insert` uses **`OnConflictStrategy.ABORT`** — never REPLACE (duplicates must reject, not overwrite).
 
 ## External docs
 
@@ -62,3 +63,11 @@ Does **not** cover: Compose list UI.
 | KSP fails: `unexpected jvm signature V` on Room DAOs | Room 2.6.x + KSP 2.3 (KSP2) mishandles Kotlin `Unit`/void on suspend DAOs | Room **2.7.x** (pin 2.7.2). Do not drop KSP2 or delete suspend DAO methods. |
 
 <!-- last-verified: 2026-08 -->
+
+### `Moon duplicate silently overwrites`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Two moons same world id; only one survives | `OnConflictStrategy.REPLACE` on `moons` insert | Use **ABORT** + `MoonInsertPolicy` duplicate check before insert |
+
+<!-- last-verified: 2026-09 -->

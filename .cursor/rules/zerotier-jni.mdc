@@ -44,3 +44,11 @@ Does **not** cover: libzt (`ZeroTierSocket`) — that is `libzt.mdc`.
 | Assigned address shows `/0` or garbage CIDR; route target parsing fails | JNI `VirtualNetworkConfig` encodes CIDR prefix in `InetSocketAddress.port`, not a TCP port | Format as `"${address.hostAddress}/${socketAddress.port}"`; use `InetAddressUtils.addressToRoute(addr, port)` for route targets |
 
 <!-- last-verified: 2026-08-31 -->
+
+### `Identity home touched during roots staging`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| After roots feature, `identity.secret` missing or `networks.d` wiped | Staging moons/planet wrote outside allowlist under shared `filesDir` | App-owned blobs live in `files/zt-worlds/`; identity-home writes only via `IdentityHomeAllowlist` (`planet`, `roots`, `moons.d/<16hex>.moon`). Never delete `identity.*` or `networks.d` |
+
+<!-- last-verified: 2026-09 -->

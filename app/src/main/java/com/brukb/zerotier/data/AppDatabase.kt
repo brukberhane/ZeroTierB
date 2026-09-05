@@ -8,17 +8,19 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.brukb.zerotier.data.model.LinkProfile
+import com.brukb.zerotier.data.model.Moon
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 
 @Database(
-    entities = [ZerotierBNetwork::class, LinkProfile::class],
-    version = 4,
+    entities = [ZerotierBNetwork::class, LinkProfile::class, Moon::class],
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(LinkConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun networkDao(): NetworkDao
     abstract fun linkProfileDao(): LinkProfileDao
+    abstract fun moonDao(): MoonDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -99,6 +101,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS moons (
+                        worldId TEXT NOT NULL PRIMARY KEY,
+                        seed TEXT,
+                        label TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        hasMoonFile INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -109,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "zerotierb.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }
