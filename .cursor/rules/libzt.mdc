@@ -144,6 +144,22 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 <!-- last-verified: 2026-08 -->
 
+### `NodeService gone after stop`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| After PROXY stop→start, custom/Dummy planet ignored; Earth leftovers in `roots`; `set_roots` never runs | `zts_node_stop` **deletes** `NodeService`. A one-shot `initialized` flag then skips `initFromStorage` / `set_roots` on the next start, so the new service has empty home and no user world | Clear the init flag and call `initFromStorage` again **before** `set_roots` / `node_start` on every not-UP path. Do not add a C `clear_roots`. Earth: omit `set_roots` (fresh service has no user world) **and** delete identity-home `planet` + `roots` so the cache cannot reload Dummy |
+
+<!-- last-verified: 2026-09 -->
+
+### `set_roots while node running`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `zts_init_set_roots` returns `ZTS_ERR_SERVICE`; planet unchanged | `set_roots` is init-time only (`ACQUIRE_SERVICE_OFFLINE`) | Call `set_roots` after storage init, **before** `zts_node_start`. Never after UP. Custom/Dummy only — skip on Earth |
+
+<!-- last-verified: 2026-09 -->
+
 ### `stopProxy stalls after link loss / Doze resume`
 
 | Symptom | Cause | Fix |

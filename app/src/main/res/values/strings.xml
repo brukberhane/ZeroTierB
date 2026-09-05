@@ -30,6 +30,7 @@
     <string name="join_status_error">Error</string>
     <string name="lifecycle_stopped">Stopped</string>
     <string name="lifecycle_starting">Starting</string>
+    <string name="roots_waiting_lan">Waiting for roots/moons (LAN ok)</string>
     <string name="lifecycle_online">Online</string>
     <string name="lifecycle_paused_doze">Paused (Doze)</string>
     <string name="lifecycle_error">Error</string>

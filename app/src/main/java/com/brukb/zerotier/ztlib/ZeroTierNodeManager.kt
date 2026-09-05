@@ -47,10 +47,32 @@ class ZeroTierNodeManager(
         }
     }
 
-    /** After [stop], reload storage + event handler. No-op unless the node is down. */
+    /** After [stop], reload storage + event handler before [initSetRoots] / [start]. */
     suspend fun reinitialize(): Result<Unit> {
         withNode { initialized.set(false) }
         return initialize()
+    }
+
+    suspend fun initSetRoots(bytes: ByteArray): Result<Unit> = withNode {
+        runCatching {
+            check(initialized.get()) { "Node not initialized" }
+            val result = node.initSetRoots(bytes)
+            check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_init_set_roots failed: $result" }
+        }
+    }
+
+    suspend fun orbit(worldId: Long, seed: Long): Result<Unit> = withNode {
+        runCatching {
+            val result = ZeroTierNative.zts_moon_orbit(worldId, seed)
+            check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_moon_orbit failed: $result" }
+        }
+    }
+
+    suspend fun deorbit(worldId: Long): Result<Unit> = withNode {
+        runCatching {
+            val result = ZeroTierNative.zts_moon_deorbit(worldId)
+            check(result == ZeroTierNative.ZTS_ERR_OK) { "zts_moon_deorbit failed: $result" }
+        }
     }
 
     suspend fun start(

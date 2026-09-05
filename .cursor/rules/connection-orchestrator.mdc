@@ -103,7 +103,15 @@ Does **not** cover: SSID parsing (android-connectivity), TUN builder (android-vp
 | ------- | ----- | --- |
 | AUTO WiFi A PROXY → WiFi B PROXY triggers stack churn | Re-applied identical `RuntimePlan` | Skip only when `plan == lastApplied` **and** live stack state matches (`runtimeMatches`) — a crashed/refused service must re-apply on the next refresh (self-healing), not no-op |
 
-<!-- last-verified: 2026-08 -->
+<!-- last-verified: 2026-09 -->
+
+### `Poke START skips restage`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Moons / planet / airgap change while PROXY or VPN is up; next refresh no-ops or only pokes START; identity home still has the old world | `RuntimePlan` has no roots fields. Equal-plan skip plus “stack already running → send START” leaves the node UP, so files never restage and `set_roots` is never called | Keep extra config (planet source, moon ids, custom mtime) in a fingerprint beside the plan. Skip only when plan **and** fingerprint match. On fingerprint change while the stack is active (`isRunning \|\| startRequested`), **stop then start** — same as join-set / VPN net-id restart. Stop timeout still aborts the swap |
+
+<!-- last-verified: 2026-09 -->
 
 ### `VPN mode leaves HTTP_PROXY loopback`
 

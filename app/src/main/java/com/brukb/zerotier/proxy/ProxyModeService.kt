@@ -22,6 +22,10 @@ import com.brukb.zerotier.connection.NodeLifecycleStatus
 import com.brukb.zerotier.connection.PhysicalLink
 import com.brukb.zerotier.connection.ztNetworkToRuntime
 import com.brukb.zerotier.connection.ztNodeStateToLifecycle
+import com.brukb.zerotier.data.IdentityHomeStore
+import com.brukb.zerotier.data.LivePlanetSource
+import com.brukb.zerotier.data.RootsApplier
+import com.brukb.zerotier.data.RootsFileStore
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.dns.AndroidUplinkDnsClient
 import com.brukb.zerotier.proxy.dns.DnsResolver
@@ -34,6 +38,8 @@ import com.brukb.zerotier.vpn.ZerotierBVpnService
 import com.brukb.zerotier.ztlib.ZeroTierNodeManager
 import com.brukb.zerotier.ztlib.ZtNetworkStatus
 import com.brukb.zerotier.ztlib.ZtNodeState
+import com.zerotier.sockets.ZeroTierNative
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,6 +68,7 @@ class ProxyModeService : Service() {
     private val scope = CoroutineScope(serviceJob + Dispatchers.IO)
 
     private lateinit var nodeManager: ZeroTierNodeManager
+    private lateinit var rootsApplier: RootsApplier
     private lateinit var routeResolver: RouteResolver
     private lateinit var uplinkDnsClient: AndroidUplinkDnsClient
     private lateinit var dnsResolver: DnsResolver
@@ -86,6 +93,8 @@ class ProxyModeService : Service() {
     private var nodePausedForDoze = false
     private val pausedNetworks = mutableListOf<ZerotierBNetwork>()
     private val lastAppliedRuntime = mutableMapOf<Long, ZtNetworkStatus>()
+    @Volatile
+    private var lastStageSource: LivePlanetSource = LivePlanetSource.EARTH
 
     @Volatile
     private var currentDnsPolicy = SystemProxyDnsPolicy.WAN_STANDARD
@@ -112,8 +121,15 @@ class ProxyModeService : Service() {
         routeResolver = RouteResolver()
         uplinkDnsClient = AndroidUplinkDnsClient(this)
         dnsResolver = DnsResolver(uplinkDnsClient)
+        val app = application as ZerotierBApplication
         nodeManager = ZeroTierNodeManager(filesDir.absolutePath)
-        systemProxyManager = SystemProxyManager(this, (application as ZerotierBApplication).preferences)
+        rootsApplier = RootsApplier(
+            prefs = app.preferences,
+            repo = app.rootsRepository,
+            identity = IdentityHomeStore(filesDir),
+            worlds = RootsFileStore(File(filesDir, "zt-worlds")),
+        )
+        systemProxyManager = SystemProxyManager(this, app.preferences)
         idleGate = IdleGate(this) { _, deviceIdle ->
             // Resume on screen-on even if isDeviceIdleMode still true for a beat.
             // allowPeriodicWork requires !idle, so SCREEN_ON-during-Doze used to
@@ -350,7 +366,32 @@ class ProxyModeService : Service() {
             val nodeState = nodeManager.state.value
             val up = ZeroTierNodeManager.isReadyToJoin(nodeState)
             if (!up) {
-                nodeManager.initialize()
+                val staged = runCatching {
+                    rootsApplier.stageBeforeNode {
+                        ZeroTierNative.zts_util_make_dummy_planet()
+                            ?: error("zts_util_make_dummy_planet returned null")
+                    }
+                }.getOrElse { err ->
+                    AppLog.w(TAG, "roots stage failed: ${err.message}")
+                    runCatching { nodeManager.stop() }
+                    nodeStarted = false
+                    backoff = NodeRetryPolicy.nextBackoffMs(backoff)
+                    sleepAbortable(backoff, shouldAbort)
+                    continue
+                }
+                lastStageSource = staged.source
+                nodeManager.reinitialize()
+                staged.planetBytes?.let { bytes ->
+                    val rootsResult = nodeManager.initSetRoots(bytes)
+                    if (rootsResult.isFailure) {
+                        AppLog.w(TAG, "initSetRoots failed: ${rootsResult.exceptionOrNull()?.message}")
+                        runCatching { nodeManager.stop() }
+                        nodeStarted = false
+                        backoff = NodeRetryPolicy.nextBackoffMs(backoff)
+                        sleepAbortable(backoff, shouldAbort)
+                        continue
+                    }
+                }
                 val startResult = nodeManager.start(shouldAbort = shouldAbort)
                 if (startResult.isFailure) {
                     AppLog.w(TAG, "node ensure start failed: ${startResult.exceptionOrNull()?.message}")
@@ -359,6 +400,15 @@ class ProxyModeService : Service() {
                     backoff = NodeRetryPolicy.nextBackoffMs(backoff)
                     sleepAbortable(backoff, shouldAbort)
                     continue
+                }
+                runCatching {
+                    rootsApplier.applyOrbits(
+                        staged,
+                        orbit = { id, seed -> nodeManager.orbit(id, seed).getOrThrow() },
+                        deorbit = { id -> nodeManager.deorbit(id).getOrThrow() },
+                    )
+                }.onFailure { err ->
+                    AppLog.w(TAG, "applyOrbits failed: ${err.message}")
                 }
                 nodeStarted = true
                 backoff = 0L
@@ -571,7 +621,12 @@ class ProxyModeService : Service() {
             val nextMessage = when {
                 lifecycle == NodeLifecycleStatus.ERROR && !nodeState.lastError.isNullOrBlank() ->
                     nodeState.lastError
-                wentOffline -> "Node offline — waiting for roots"
+                wentOffline ||
+                    (lifecycle == NodeLifecycleStatus.STARTING &&
+                        nodeState.receivedNodeUp &&
+                        !nodeState.isOnline &&
+                        lastStageSource == LivePlanetSource.DUMMY) ->
+                    getString(R.string.roots_waiting_lan)
                 cameOnline && (httpProxyPort == null || httpProxyPort <= 0) && formattedId != null ->
                     "Node online: $formattedId"
                 else -> statusMessage

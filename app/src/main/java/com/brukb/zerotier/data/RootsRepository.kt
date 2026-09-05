@@ -9,6 +9,13 @@ class RootsRepository(
 ) {
     fun observeMoons(): Flow<List<Moon>> = dao.observeAll()
 
+    suspend fun getMoons(): List<Moon> = dao.getAll()
+
+    fun customPlanetPresent(): Boolean = files.customPlanetFile().exists()
+
+    fun customPlanetLastModified(): Long =
+        files.customPlanetFile().takeIf { it.exists() }?.lastModified() ?: 0L
+
     suspend fun addMoon(
         worldId: String,
         seed: String?,

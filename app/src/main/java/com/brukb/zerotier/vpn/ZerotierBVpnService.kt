@@ -22,6 +22,10 @@ import com.brukb.zerotier.connection.formatAssignedCidr
 import com.brukb.zerotier.connection.formatRouteLine
 import com.brukb.zerotier.connection.vpnVirtualStatusToJoinStatus
 import com.brukb.zerotier.data.model.ZerotierBNetwork
+import com.brukb.zerotier.data.IdentityHomeStore
+import com.brukb.zerotier.data.LivePlanetSource
+import com.brukb.zerotier.data.RootsApplier
+import com.brukb.zerotier.data.RootsFileStore
 import com.brukb.zerotier.ui.MainActivity
 import com.brukb.zerotier.vpn.scheduling.PacketScheduler
 import com.zerotier.sdk.Event
@@ -34,7 +38,9 @@ import com.zerotier.sdk.VirtualNetworkConfigListener
 import com.zerotier.sdk.VirtualNetworkConfigOperation
 import com.zerotier.sdk.VirtualNetworkStatus
 import com.zerotier.sdk.util.StringUtils
+import com.zerotier.sockets.ZeroTierNative
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,10 +95,20 @@ class ZerotierBVpnService :
     private val rebuildMutex = Mutex()
     @Volatile
     private var allowedVpnNetworkId: String? = null
+    @Volatile
+    private var lastStageSource: LivePlanetSource = LivePlanetSource.EARTH
+    private lateinit var rootsApplier: RootsApplier
 
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
+        val app = application as ZerotierBApplication
+        rootsApplier = RootsApplier(
+            prefs = app.preferences,
+            repo = app.rootsRepository,
+            identity = IdentityHomeStore(filesDir),
+            worlds = RootsFileStore(File(filesDir, "zt-worlds")),
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -149,6 +165,13 @@ class ZerotierBVpnService :
                         return START_NOT_STICKY
                     }
                     datagramSocket = socket
+                    val staged = runBlocking {
+                        rootsApplier.stageBeforeNode {
+                            ZeroTierNative.zts_util_make_dummy_planet()
+                                ?: error("zts_util_make_dummy_planet returned null")
+                        }
+                    }
+                    lastStageSource = staged.source
                     val ztNode = Node(System.currentTimeMillis())
                     val scheduler = PacketScheduler(this)
                     packetScheduler = scheduler
@@ -176,13 +199,25 @@ class ZerotierBVpnService :
                         return START_NOT_STICKY
                     }
                     node = ztNode
+                    runBlocking {
+                        rootsApplier.applyOrbits(
+                            staged,
+                            orbit = { id, seed -> ztNode.orbit(id, seed) },
+                            deorbit = { id -> ztNode.deorbit(id) },
+                        )
+                    }
                     scheduler.start()
                     vpnThread = Thread(this, "ZeroTier Service Thread").also { it.start() }
+                    val waitingMessage = if (staged.source == LivePlanetSource.DUMMY) {
+                        getString(R.string.roots_waiting_lan)
+                    } else {
+                        "Waiting for roots"
+                    }
                     updateState {
                         copy(
                             isRunning = true,
                             nodeId = StringUtils.addressToString(ztNode.address()),
-                            statusMessage = "Waiting for roots",
+                            statusMessage = waitingMessage,
                             nodeLifecycle = NodeLifecycleStatus.STARTING,
                         )
                     }
@@ -248,10 +283,15 @@ class ZerotierBVpnService :
                 }
             }
             Event.EVENT_OFFLINE -> {
+                val offlineMessage = if (lastStageSource == LivePlanetSource.DUMMY) {
+                    getString(R.string.roots_waiting_lan)
+                } else {
+                    "Node offline — waiting for roots"
+                }
                 updateState {
                     copy(
                         nodeLifecycle = NodeLifecycleStatus.STARTING,
-                        statusMessage = "Node offline — waiting for roots",
+                        statusMessage = offlineMessage,
                     )
                 }
             }

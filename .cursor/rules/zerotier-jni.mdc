@@ -49,6 +49,7 @@ Does **not** cover: libzt (`ZeroTierSocket`) — that is `libzt.mdc`.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| After roots feature, `identity.secret` missing or `networks.d` wiped | Staging moons/planet wrote outside allowlist under shared `filesDir` | App-owned blobs live in `files/zt-worlds/`; identity-home writes only via `IdentityHomeAllowlist` (`planet`, `roots`, `moons.d/<16hex>.moon`). Never delete `identity.*` or `networks.d` |
+| After roots feature, `identity.secret` missing or `networks.d` wiped | Staging moons/planet wrote outside allowlist under shared `filesDir` | App-owned blobs live in `files/zt-worlds/`; identity-home writes only via `IdentityHomeAllowlist` (`planet`, `roots`, `moons.d/<16hex>.moon`). Never delete `identity.*` or `networks.d`. JNI planet file is `planet`; libzt cache is `roots` — Earth staging must delete **both** |
+| Unit test `exists("dummy.planet")` / `exists("identity.secret")` throws | Allowlist gates **all** ops including read/exists, not only write | Assert absence of forbidden names with `java.io.File` on the home dir, not through the allowlisted store |
 
 <!-- last-verified: 2026-09 -->

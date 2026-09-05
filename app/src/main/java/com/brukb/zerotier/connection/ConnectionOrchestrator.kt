@@ -6,7 +6,12 @@ import android.net.VpnService
 import com.brukb.zerotier.log.AppLog
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
+import com.brukb.zerotier.data.LivePlanetResolver
 import com.brukb.zerotier.data.NetworkRepository
+import com.brukb.zerotier.data.RootsFingerprint
+import com.brukb.zerotier.data.RootsRepository
+import com.brukb.zerotier.data.RootsRestart
+import com.brukb.zerotier.data.buildRootsFingerprint
 import com.brukb.zerotier.data.model.GlobalMode
 import com.brukb.zerotier.data.model.LinkMode
 import com.brukb.zerotier.data.model.LinkProfile
@@ -39,10 +44,12 @@ class ConnectionOrchestrator(
     private val preferences: AppPreferences,
     private val networkRepository: NetworkRepository,
     private val linkProfileRepository: LinkProfileRepository,
+    private val rootsRepository: RootsRepository,
     private val scope: CoroutineScope,
 ) {
     private val mutex = Mutex()
     private var lastApplied: RuntimePlan? = null
+    private var lastRootsFp: RootsFingerprint? = null
 
     @Volatile
     var startAllowed: Boolean = false
@@ -108,7 +115,8 @@ class ConnectionOrchestrator(
     private fun activeDataSubscriptionId(): Int? = DataSubscriptionIds.activeOrNull()
 
     private suspend fun applyLocked(plan: RuntimePlan) {
-        if (plan == lastApplied && runtimeMatches(plan)) {
+        val fp = currentRootsFingerprint()
+        if (plan == lastApplied && runtimeMatches(plan) && fp == lastRootsFp) {
             AppLog.i(TAG, "plan unchanged: ${plan.reason}")
             return
         }
@@ -117,10 +125,11 @@ class ConnectionOrchestrator(
         try {
             when (plan.runtime) {
                 Runtime.OFF -> applyOff()
-                Runtime.PROXY -> applyProxy(plan)
-                Runtime.VPN -> applyVpn(plan)
+                Runtime.PROXY -> applyProxy(plan, fp)
+                Runtime.VPN -> applyVpn(plan, fp)
             }
             lastApplied = plan
+            lastRootsFp = if (plan.runtime == Runtime.OFF) null else fp
             _state.value = _state.value.copy(isApplying = false, lastError = null)
         } catch (e: Exception) {
             // lastApplied intentionally left stale: the next refresh retries
@@ -154,12 +163,16 @@ class ConnectionOrchestrator(
         stopVpnStack()
     }
 
-    private suspend fun applyProxy(plan: RuntimePlan) {
+    private suspend fun applyProxy(plan: RuntimePlan, fp: RootsFingerprint) {
         stopVpnStack()
         awaitUdpPortReleased(VPN_UDP_PORT)
-        val proxyRunning = ProxyModeService.state.value.isRunning
-        if (proxyJoinSetRequiresRestart(proxyRunning, lastApplied?.joinNetworkIds, plan.joinNetworkIds)) {
+        val proxyActive = ProxyModeService.state.value.isRunning || ProxyModeService.startRequested
+        if (proxyJoinSetRequiresRestart(proxyActive, lastApplied?.joinNetworkIds, plan.joinNetworkIds)) {
             AppLog.i(TAG, "proxy join set changed — restarting")
+            stopProxyStack()
+            awaitUdpPortReleased(LIBZT_UDP_PORT)
+        } else if (RootsRestart.requiresRestart(proxyActive, lastRootsFp, fp)) {
+            AppLog.i(TAG, "roots config changed — restarting proxy")
             stopProxyStack()
             awaitUdpPortReleased(LIBZT_UDP_PORT)
         }
@@ -177,12 +190,16 @@ class ConnectionOrchestrator(
         }
     }
 
-    private suspend fun applyVpn(plan: RuntimePlan) {
+    private suspend fun applyVpn(plan: RuntimePlan, fp: RootsFingerprint) {
         SystemProxyManager(context, preferences).disable()
         stopProxyStack()
         awaitUdpPortReleased(LIBZT_UDP_PORT)
         val vpnId = plan.vpnNetworkId ?: return
-        if (ZerotierBVpnService.state.value.isRunning && lastApplied?.vpnNetworkId != vpnId) {
+        val vpnActive = ZerotierBVpnService.state.value.isRunning || ZerotierBVpnService.startRequested
+        if (vpnActive && lastApplied?.vpnNetworkId != vpnId) {
+            stopVpnStack()
+        } else if (RootsRestart.requiresRestart(vpnActive, lastRootsFp, fp)) {
+            AppLog.i(TAG, "roots config changed — restarting VPN")
             stopVpnStack()
         }
         if (!ZerotierBVpnService.state.value.isRunning) {
@@ -258,6 +275,26 @@ class ConnectionOrchestrator(
         } finally {
             runCatching { socket.close() }
         }
+    }
+
+    private suspend fun currentRootsFingerprint(): RootsFingerprint {
+        val airgap = preferences.airgap.first()
+        val latch = preferences.airgapWithoutMoons.first()
+        val planetSource = preferences.planetSource.first()
+        val moons = rootsRepository.getMoons()
+        val customPresent = rootsRepository.customPlanetPresent()
+        val decision = LivePlanetResolver.resolve(
+            airgap = airgap,
+            airgapWithoutMoons = latch,
+            planetSource = planetSource,
+            moonCount = moons.size,
+            customPlanetPresent = customPresent,
+        )
+        return buildRootsFingerprint(
+            source = decision.source,
+            moons = moons,
+            customStamp = rootsRepository.customPlanetLastModified(),
+        )
     }
 
     private fun manualOffPlan(): RuntimePlan =

@@ -1,5 +1,8 @@
 package com.brukb.zerotier.connection
 
+import com.brukb.zerotier.data.LivePlanetSource
+import com.brukb.zerotier.data.RootsFingerprint
+import com.brukb.zerotier.data.RootsRestart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -72,6 +75,23 @@ class ConnectionOrchestratorTest {
                 proxyRunning = true,
                 lastJoinNetworkIds = null,
                 nextJoinNetworkIds = listOf("n1"),
+            ),
+        )
+    }
+
+    @Test
+    fun rootsRestart_requiresRestart_whenRunningAndFingerprintChanges() {
+        val before = RootsFingerprint(LivePlanetSource.EARTH, listOf("n1"), 0L)
+        val after = RootsFingerprint(LivePlanetSource.EARTH, listOf("n1", "n2"), 0L)
+        assertEquals(false, RootsRestart.requiresRestart(false, before, after))
+        assertEquals(false, RootsRestart.requiresRestart(true, before, before))
+        assertEquals(true, RootsRestart.requiresRestart(true, before, after))
+        assertEquals(
+            true,
+            RootsRestart.requiresRestart(
+                true,
+                before,
+                RootsFingerprint(LivePlanetSource.DUMMY, listOf("n1"), 0L),
             ),
         )
     }

@@ -27,7 +27,7 @@
 | T16   | [PROXY OFF heal + abortable node retry](./T16-proxy-off-heal-node-retry.md)          | ✅       | T15        | T17   | L6    | A+C+2+4: disable HTTP_PROXY first; bind-before-NODE_UP; retry |
 | T17   | [Roots persistence + world parse](./T17-roots-persistence-world-parse.md)            | ✅       | T16        | T18   | L1    | Room v5 moons; DataStore airgap/planetSource; zt-worlds files |
 | T18   | [libzt moon store + set_roots + Dummy planet](./T18-libzt-moon-store-set-roots.md)    | ✅       | T17        | T19   | L4    | pylon submodule; no Topology skip; AAR rebuild               |
-| T19   | [Apply roots on PROXY + VPN start](./T19-roots-apply-both-stacks.md)                  | Pending | T18        | T20   | L6    | Stage Earth/Custom/Dummy; orbit moons; identity allowlist    |
+| T19   | [Apply roots on PROXY + VPN start](./T19-roots-apply-both-stacks.md)                  | ✅       | T18        | T20   | L6    | Stage Earth/Custom/Dummy; orbit moons; identity allowlist    |
 | T20   | [Roots settings screen](./T20-roots-settings-screen.md)                              | Pending | T19        | T10   | L7    | Nested Roots from Settings; SAF + id+seed; airgap latch      |
 | T10   | [E2E / CoS proof](./T10-e2e-cos-proof.md)                                            | Pending | T20        | —     | L8    | Run after UI rewrite A–E + T16 + Roots T17–T20               |
 

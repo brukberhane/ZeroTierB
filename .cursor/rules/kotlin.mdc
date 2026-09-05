@@ -84,3 +84,11 @@ Does **not** cover: JNI C++, Gradle plugin bumps.
 | Unit test compile error: `Int` but `Byte` expected in `byteArrayOf(0xde, …)` | Kotlin `byteArrayOf` requires `Byte`; literals >127 overflow signed `Byte` | Use `0xde.toByte()` (or negative byte literals) for World blob fixtures |
 
 <!-- last-verified: 2026-09 -->
+
+### `Public ctor exposes internal type`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `public function exposes its internal parameter type` on a class with a test-only prefs/dao interface | Primary ctor is public; parameter type is `internal` | Mark the injecting ctor `internal`, keep a public ctor that wraps production types |
+
+<!-- last-verified: 2026-09 -->

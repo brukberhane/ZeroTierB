@@ -7,6 +7,7 @@ import com.brukb.zerotier.data.AppDatabase
 import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
+import com.brukb.zerotier.data.LivePlanetResolver
 import com.brukb.zerotier.data.RootsFileStore
 import com.brukb.zerotier.data.RootsRepository
 import com.brukb.zerotier.data.model.GlobalMode
@@ -19,6 +20,8 @@ import rikka.shizuku.Shizuku
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -66,6 +69,7 @@ class ZerotierBApplication : Application() {
             preferences = preferences,
             networkRepository = networkRepository,
             linkProfileRepository = linkProfileRepository,
+            rootsRepository = rootsRepository,
             scope = appScope,
         )
         linkObserver = LinkObserver(
@@ -78,6 +82,31 @@ class ZerotierBApplication : Application() {
         registerShizukuListeners()
         appScope.launch {
             preferences.verboseFileLog.collect { AppLog.verbose = it }
+        }
+        appScope.launch {
+            combine(
+                preferences.airgap,
+                preferences.airgapWithoutMoons,
+                preferences.planetSource,
+                rootsRepository.observeMoons(),
+            ) { airgap, latch, planetSource, moons ->
+                val customPresent = rootsRepository.customPlanetPresent()
+                val decision = LivePlanetResolver.resolve(
+                    airgap = airgap,
+                    airgapWithoutMoons = latch,
+                    planetSource = planetSource,
+                    moonCount = moons.size,
+                    customPlanetPresent = customPresent,
+                )
+                Triple(decision, moons.size, customPresent)
+            }
+                .distinctUntilChanged()
+                .collect { (decision, _, _) ->
+                    if (decision.airgapForcedOff) {
+                        preferences.setAirgap(false)
+                    }
+                    orchestrator.refresh()
+                }
         }
         appScope.launch {
             networkRepository.migrateStoredNetworkIds()

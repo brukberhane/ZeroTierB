@@ -15,6 +15,7 @@ Settings gains a **Roots** row that opens a nested screen (not a full Settings r
 | Timestamp | Event | From | To | Details | User |
 | --------- | ----- | ---- | -- | ------- | ---- |
 | 2026-09-05 | created | — | Pending | /setup-tasks Roots feature | |
+| 2026-09-05 | notes | Pending | Pending | T19 close-out: Application already collects roots → refresh | |
 
 ## Requirements
 
@@ -46,6 +47,14 @@ Settings gains a **Roots** row that opens a nested screen (not a full Settings r
 - `app/src/main/java/com/brukb/zerotier/ui/SettingsBottomSheet.kt`
 - `app/src/main/java/com/brukb/zerotier/ui/MainScreen.kt` / `MainViewModel.kt`
 - T13 nested-sheet pattern; Links overlay as a prior “navigate out of settings” example
+
+## Reality notes (from T19 close-out)
+
+- Apply/restart is T19: `LivePlanetResolver` + `RootsApplier` + orchestrator `RootsFingerprint`. UI only mutates Room/prefs; do **not** restage from the ViewModel. `ZerotierBApplication` already `combine`s airgap / latch / planetSource / `observeMoons()` → `refresh()`.
+- Last-moon latch: T19 writes `setAirgap(false)` in both the Application collector and `stageBeforeNode`. Snack copy is this task.
+- Starting subtitle string (T19): `R.string.roots_waiting_lan` = “Waiting for roots/moons (LAN ok)”. PROXY + VPN Dummy/offline already use it. Hero chip stays `lifecycle_starting`. Do not fake Online.
+- Dummy generate stays in start path: `{ ZeroTierNative.zts_util_make_dummy_planet() }` — never `Application.onCreate`.
+- Identity-home allowlist **throws** on denied paths including `exists()` / `read()` — do not probe `dummy.planet` through `IdentityHomeStore`.
 
 ## Implementation Plan
 
