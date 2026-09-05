@@ -26,6 +26,7 @@ import com.brukb.zerotier.data.IdentityHomeStore
 import com.brukb.zerotier.data.LivePlanetSource
 import com.brukb.zerotier.data.RootsApplier
 import com.brukb.zerotier.data.RootsFileStore
+import com.brukb.zerotier.data.RootsStatusCopy
 import com.brukb.zerotier.data.model.ZerotierBNetwork
 import com.brukb.zerotier.proxy.dns.AndroidUplinkDnsClient
 import com.brukb.zerotier.proxy.dns.DnsResolver
@@ -618,15 +619,20 @@ class ProxyModeService : Service() {
                 lifecycle == NodeLifecycleStatus.STARTING
             val cameOnline = nodeLifecycle != NodeLifecycleStatus.ONLINE &&
                 lifecycle == NodeLifecycleStatus.ONLINE
+            val dummyStarting = lifecycle == NodeLifecycleStatus.STARTING &&
+                nodeState.receivedNodeUp &&
+                !nodeState.isOnline
+            val waitingCopy = RootsStatusCopy.waitingMessage(
+                source = lastStageSource,
+                wentOffline = wentOffline,
+                dummyStarting = dummyStarting,
+                lanOk = getString(R.string.roots_waiting_lan),
+                earthOffline = "Node offline — waiting for roots",
+            )
             val nextMessage = when {
                 lifecycle == NodeLifecycleStatus.ERROR && !nodeState.lastError.isNullOrBlank() ->
                     nodeState.lastError
-                wentOffline ||
-                    (lifecycle == NodeLifecycleStatus.STARTING &&
-                        nodeState.receivedNodeUp &&
-                        !nodeState.isOnline &&
-                        lastStageSource == LivePlanetSource.DUMMY) ->
-                    getString(R.string.roots_waiting_lan)
+                waitingCopy != null -> waitingCopy
                 cameOnline && (httpProxyPort == null || httpProxyPort <= 0) && formattedId != null ->
                     "Node online: $formattedId"
                 else -> statusMessage

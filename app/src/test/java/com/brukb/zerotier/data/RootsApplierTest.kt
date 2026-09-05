@@ -93,8 +93,80 @@ class RootsApplierTest {
         assertArrayEquals(moonBytes, identity.read("moons.d/00000000deadbeef.moon"))
         assertFalse(identity.exists("moons.d/00000000cafebabe.moon"))
         assertEquals(setOf("00000000cafebabe"), staged.extraMoonIdsToDeorbit)
+        assertEquals(setOf("00000000deadbeef"), staged.copiedMoonIds)
         home.deleteRecursively()
         worldsDir.deleteRecursively()
+    }
+
+    @Test
+    fun applyOrbits_fileMissing_usesSeed_notZero() = runTest {
+        val home = Files.createTempDirectory("roots-applier-seed").toFile()
+        val worldsDir = Files.createTempDirectory("roots-applier-seed-w").toFile()
+        val identity = IdentityHomeStore(home)
+        val worlds = RootsFileStore(worldsDir)
+        val moon = Moon(
+            worldId = "00000000deadbeef",
+            seed = "000000abcd",
+            hasMoonFile = true,
+        )
+        val repo = RootsRepository(FakeMoonDao(listOf(moon)), worlds)
+        val applier = RootsApplier(
+            prefs = FakeRootsApplyPrefs(),
+            repo = repo,
+            identity = identity,
+            worlds = worlds,
+        )
+        val staged = applier.stageBeforeNode { dummyFixture() }
+        assertTrue(staged.copiedMoonIds.isEmpty())
+        val orbits = mutableListOf<Pair<Long, Long>>()
+        applier.applyOrbits(
+            staged,
+            orbit = { id, seed -> orbits.add(id to seed) },
+            deorbit = {},
+        )
+        assertEquals(1, orbits.size)
+        assertEquals(java.lang.Long.parseUnsignedLong("000000abcd", 16), orbits.single().second)
+        home.deleteRecursively()
+        worldsDir.deleteRecursively()
+    }
+
+    @Test
+    fun applyOrbits_fileMissing_noSeed_skips() = runTest {
+        val home = Files.createTempDirectory("roots-applier-skip").toFile()
+        val worldsDir = Files.createTempDirectory("roots-applier-skip-w").toFile()
+        val identity = IdentityHomeStore(home)
+        val worlds = RootsFileStore(worldsDir)
+        val moon = Moon(
+            worldId = "00000000deadbeef",
+            seed = null,
+            hasMoonFile = true,
+        )
+        val repo = RootsRepository(FakeMoonDao(listOf(moon)), worlds)
+        val applier = RootsApplier(
+            prefs = FakeRootsApplyPrefs(),
+            repo = repo,
+            identity = identity,
+            worlds = worlds,
+        )
+        val staged = applier.stageBeforeNode { dummyFixture() }
+        val orbits = mutableListOf<Pair<Long, Long>>()
+        applier.applyOrbits(staged, orbit = { id, seed -> orbits.add(id to seed) }, deorbit = {})
+        assertTrue(orbits.isEmpty())
+        home.deleteRecursively()
+        worldsDir.deleteRecursively()
+    }
+
+    @Test
+    fun orbitSeedForMoon_table() {
+        val copied = Moon(worldId = "00000000deadbeef", seed = "000000abcd", hasMoonFile = true)
+        val seedOnly = Moon(worldId = "00000000cafebabe", seed = "000000abcd", hasMoonFile = false)
+        val neither = Moon(worldId = "0000000000000001", seed = null, hasMoonFile = true)
+        assertEquals(0L, RootsApplier.orbitSeedForMoon(copied, setOf("00000000deadbeef")))
+        assertEquals(
+            java.lang.Long.parseUnsignedLong("000000abcd", 16),
+            RootsApplier.orbitSeedForMoon(seedOnly, emptySet()),
+        )
+        assertNull(RootsApplier.orbitSeedForMoon(neither, emptySet()))
     }
 
     private fun dummyFixture(): ByteArray = byteArrayOf(

@@ -9,6 +9,7 @@ data class RootsStageResult(
     val planetBytes: ByteArray?,
     val extraMoonIdsToDeorbit: Set<String>,
     val moons: List<Moon>,
+    val copiedMoonIds: Set<String>,
     val fingerprint: RootsFingerprint,
 )
 
@@ -61,6 +62,7 @@ class RootsApplier internal constructor(
                 bytes
             }
         }
+        val copiedMoonIds = mutableSetOf<String>()
         for (moon in moons) {
             if (!moon.hasMoonFile) continue
             val moonFile = worlds.moonFile(moon.worldId)
@@ -69,6 +71,7 @@ class RootsApplier internal constructor(
                 continue
             }
             identity.write("moons.d/${moon.worldId}.moon", moonFile.readBytes())
+            copiedMoonIds.add(moon.worldId)
         }
         val customStamp = if (customPresent) worlds.customPlanetFile().lastModified() else 0L
         return RootsStageResult(
@@ -76,6 +79,7 @@ class RootsApplier internal constructor(
             planetBytes = planetBytes,
             extraMoonIdsToDeorbit = extraMoonIds,
             moons = moons,
+            copiedMoonIds = copiedMoonIds,
             fingerprint = buildRootsFingerprint(decision.source, moons, customStamp),
         )
     }
@@ -89,17 +93,23 @@ class RootsApplier internal constructor(
             deorbit(java.lang.Long.parseUnsignedLong(id, 16))
         }
         for (moon in result.moons) {
-            val worldId = moon.worldIdLong()
-            when {
-                moon.hasMoonFile -> orbit(worldId, 0L)
-                moon.seed != null -> orbit(worldId, moon.seedLongOrNull()!!)
-                else -> AppLog.w(TAG, "skip orbit ${moon.worldId}: no file or seed")
+            val seed = orbitSeedForMoon(moon, result.copiedMoonIds)
+            if (seed == null) {
+                AppLog.w(TAG, "skip orbit ${moon.worldId}: no copied file or seed")
+                continue
             }
+            orbit(moon.worldIdLong(), seed)
         }
     }
 
     companion object {
         private const val TAG = "RootsApplier"
+
+        fun orbitSeedForMoon(moon: Moon, copiedMoonIds: Set<String>): Long? = when {
+            moon.worldId in copiedMoonIds -> 0L
+            moon.seed != null -> moon.seedLongOrNull()
+            else -> null
+        }
     }
 }
 

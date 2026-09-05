@@ -2,12 +2,18 @@ package com.brukb.zerotier.data
 
 import com.brukb.zerotier.data.model.Moon
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class RootsRepository(
     private val dao: MoonDao,
     private val files: RootsFileStore,
 ) {
+    private val customPlanetEpoch = MutableStateFlow(0)
+
     fun observeMoons(): Flow<List<Moon>> = dao.observeAll()
+
+    fun observeCustomPlanetEpoch(): Flow<Int> = customPlanetEpoch.asStateFlow()
 
     suspend fun getMoons(): List<Moon> = dao.getAll()
 
@@ -57,10 +63,16 @@ class RootsRepository(
 
     suspend fun saveCustomPlanet(bytes: ByteArray) {
         files.writeCustomPlanet(bytes)
+        bumpCustomPlanetEpoch()
     }
 
     suspend fun deleteCustomPlanet() {
         files.deleteCustomPlanet()
+        bumpCustomPlanetEpoch()
+    }
+
+    private fun bumpCustomPlanetEpoch() {
+        customPlanetEpoch.value += 1
     }
 
     fun ensureDummyPlanet(generate: () -> ByteArray): ByteArray {

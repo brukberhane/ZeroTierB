@@ -3,7 +3,7 @@
 **Status**: Pending  
 **Parent INDEX**: [INDEX.md](./INDEX.md)  
 **Depends-on**: T19  
-**Next**: T10  
+**Next**: T21  
 **Layer**: L7
 
 ## Description
@@ -50,11 +50,12 @@ Settings gains a **Roots** row that opens a nested screen (not a full Settings r
 
 ## Reality notes (from T19 close-out)
 
-- Apply/restart is T19: `LivePlanetResolver` + `RootsApplier` + orchestrator `RootsFingerprint`. UI only mutates Room/prefs; do **not** restage from the ViewModel. `ZerotierBApplication` already `combine`s airgap / latch / planetSource / `observeMoons()` → `refresh()`.
+- Apply/restart is T19: `LivePlanetResolver` + `RootsApplier` + orchestrator `RootsFingerprint`. UI only mutates Room/prefs; do **not** restage from the ViewModel. `ZerotierBApplication` already `combine`s airgap / latch / planetSource / `observeMoons()` / `observeCustomPlanetEpoch()` → `refresh()`. `saveCustomPlanet` / `deleteCustomPlanet` bump the epoch — replacing a custom blob while already CUSTOM restarts without a ViewModel refresh call.
 - Last-moon latch: T19 writes `setAirgap(false)` in both the Application collector and `stageBeforeNode`. Snack copy is this task.
-- Starting subtitle string (T19): `R.string.roots_waiting_lan` = “Waiting for roots/moons (LAN ok)”. PROXY + VPN Dummy/offline already use it. Hero chip stays `lifecycle_starting`. Do not fake Online.
+- Starting subtitle: `R.string.roots_waiting_lan` for Dummy; Earth offline stays “Node offline — waiting for roots” (`RootsStatusCopy`). Hero chip stays `lifecycle_starting`. Do not fake Online.
 - Dummy generate stays in start path: `{ ZeroTierNative.zts_util_make_dummy_planet() }` — never `Application.onCreate`.
 - Identity-home allowlist **throws** on denied paths including `exists()` / `read()` — do not probe `dummy.planet` through `IdentityHomeStore`.
+- `orbit(id, 0)` only when the `.moon` was **copied** into identity home (`copiedMoonIds`). Missing file + seed → `orbit(id, seed)`. Missing both → skip.
 
 ## Implementation Plan
 

@@ -8,6 +8,7 @@ import com.brukb.zerotier.data.AppPreferences
 import com.brukb.zerotier.data.LinkProfileRepository
 import com.brukb.zerotier.data.NetworkRepository
 import com.brukb.zerotier.data.LivePlanetResolver
+import com.brukb.zerotier.data.LivePlanetSource
 import com.brukb.zerotier.data.RootsFileStore
 import com.brukb.zerotier.data.RootsRepository
 import com.brukb.zerotier.data.model.GlobalMode
@@ -89,7 +90,8 @@ class ZerotierBApplication : Application() {
                 preferences.airgapWithoutMoons,
                 preferences.planetSource,
                 rootsRepository.observeMoons(),
-            ) { airgap, latch, planetSource, moons ->
+                rootsRepository.observeCustomPlanetEpoch(),
+            ) { airgap, latch, planetSource, moons, customEpoch ->
                 val customPresent = rootsRepository.customPlanetPresent()
                 val decision = LivePlanetResolver.resolve(
                     airgap = airgap,
@@ -98,11 +100,17 @@ class ZerotierBApplication : Application() {
                     moonCount = moons.size,
                     customPlanetPresent = customPresent,
                 )
-                Triple(decision, moons.size, customPresent)
+                RootsRefreshKey(
+                    source = decision.source,
+                    airgapForcedOff = decision.airgapForcedOff,
+                    moonCount = moons.size,
+                    customPresent = customPresent,
+                    customEpoch = customEpoch,
+                )
             }
                 .distinctUntilChanged()
-                .collect { (decision, _, _) ->
-                    if (decision.airgapForcedOff) {
+                .collect { key ->
+                    if (key.airgapForcedOff) {
                         preferences.setAirgap(false)
                     }
                     orchestrator.refresh()
@@ -192,3 +200,11 @@ class ZerotierBApplication : Application() {
         private const val TAG = "ZerotierBApplication"
     }
 }
+
+private data class RootsRefreshKey(
+    val source: LivePlanetSource,
+    val airgapForcedOff: Boolean,
+    val moonCount: Int,
+    val customPresent: Boolean,
+    val customEpoch: Int,
+)

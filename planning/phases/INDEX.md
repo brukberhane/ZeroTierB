@@ -28,8 +28,10 @@
 | T17   | [Roots persistence + world parse](./T17-roots-persistence-world-parse.md)            | ✅       | T16        | T18   | L1    | Room v5 moons; DataStore airgap/planetSource; zt-worlds files |
 | T18   | [libzt moon store + set_roots + Dummy planet](./T18-libzt-moon-store-set-roots.md)    | ✅       | T17        | T19   | L4    | pylon submodule; no Topology skip; AAR rebuild               |
 | T19   | [Apply roots on PROXY + VPN start](./T19-roots-apply-both-stacks.md)                  | ✅       | T18        | T20   | L6    | Stage Earth/Custom/Dummy; orbit moons; identity allowlist    |
-| T20   | [Roots settings screen](./T20-roots-settings-screen.md)                              | Pending | T19        | T10   | L7    | Nested Roots from Settings; SAF + id+seed; airgap latch      |
-| T10   | [E2E / CoS proof](./T10-e2e-cos-proof.md)                                            | Pending | T20        | —     | L8    | Run after UI rewrite A–E + T16 + Roots T17–T20               |
+| T20   | [Roots settings screen](./T20-roots-settings-screen.md)                              | Pending | T19        | T21   | L7    | Nested Roots from Settings; SAF + id+seed; airgap latch      |
+| T21   | [Roots start hardening](./T21-roots-start-hardening.md)                              | Pending | T20        | T22   | L6    | Orbit-fail retry; VPN off runBlocking; one worlds store      |
+| T22   | [Dummy C buffer + native selftest](./T22-dummy-planet-c-buffer-selftest.md)          | Pending | T21        | T10   | L4    | T18 leftover: Dummy capacity + host selftest; AAR rebuild    |
+| T10   | [E2E / CoS proof](./T10-e2e-cos-proof.md)                                            | Pending | T22        | —     | L8    | Run after UI rewrite A–E + T16 + Roots T17–T22               |
 
 
 ## Layer legend
@@ -47,7 +49,7 @@
 | L8    | E2E proof                                     |
 
 
-**ID scheme:** `T11.5` is a decimal insert between T11 and T12 (dot in INDEX id and filename). Do not flatten to `T115`. Chain: T09 → T11 → T11.5 → T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T10.
+**ID scheme:** `T11.5` is a decimal insert between T11 and T12 (dot in INDEX id and filename). Do not flatten to `T115`. Chain: T09 → T11 → T11.5 → T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21 → T22 → T10.
 
 ## How to work
 
