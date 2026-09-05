@@ -28,6 +28,8 @@ class IdentityHomeAllowlistTest {
     fun deniesTraversalAndAppStore() {
         assertFalse(IdentityHomeAllowlist.isAllowedRelative("moons.d/../identity.secret"))
         assertFalse(IdentityHomeAllowlist.isAllowedRelative("zt-worlds/planet"))
+        assertFalse(IdentityHomeAllowlist.isAllowedRelative("zt-worlds/dummy.planet"))
+        assertFalse(IdentityHomeAllowlist.isAllowedRelative("dummy.planet"))
         assertFalse(IdentityHomeAllowlist.isAllowedRelative("planet.bak"))
     }
 

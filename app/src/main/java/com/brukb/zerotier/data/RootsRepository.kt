@@ -56,6 +56,20 @@ class RootsRepository(
         files.deleteCustomPlanet()
     }
 
+    fun ensureDummyPlanet(generate: () -> ByteArray): ByteArray {
+        val file = files.dummyPlanetFile()
+        if (file.exists()) {
+            val existing = file.readBytes()
+            if (DummyPlanet.isValid(existing)) {
+                return existing
+            }
+        }
+        val bytes = generate()
+        check(DummyPlanet.isValid(bytes)) { "generated dummy planet invalid" }
+        files.writeDummyPlanet(bytes)
+        return bytes
+    }
+
     sealed class AddMoonResult {
         data object Ok : AddMoonResult()
 

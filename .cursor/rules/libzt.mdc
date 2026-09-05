@@ -124,9 +124,17 @@ Does **not** cover: JNI TUN, `Settings.Global.HTTP_PROXY` writes.
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
-| `libzt/src` edit has no effect on device; `libzt.so` BuildId unchanged | App links **prebuilt AAR** `libzt/dist/android-any-android-release/libzt-release.aar` (gitignored local artifact); `make verify` does not rebuild it | `cd libzt && ANDROID_HOME=$ANDROID_HOME ./build.sh android-aar release` (builds + copies AAR into `dist/`), then reinstall. Manual fallback: `cd libzt/pkg/android && ./gradlew :app:assembleRelease` + `cp` |
+| `libzt/src` edit has no effect on device; `libzt.so` BuildId unchanged; `javap` shows old natives after edit | App links **prebuilt AAR** `libzt/dist/.../libzt-release.aar` (gitignored); `make verify` does not rebuild it; `build.sh android-aar` can **copy a stale AAR** if Gradle/native build failed (e.g. missing host `cmake`, JNI compile error) | Put Android SDK CMake on `PATH` (`$ANDROID_HOME/cmake/3.22.1/bin`). Rebuild: `cd libzt/pkg/android && ./gradlew assembleRelease` then `cp app/build/outputs/aar/libzt-release.aar dist/...`. Confirm with `javap` / `nm -D` on the new AAR before `make verify` |
 
-<!-- last-verified: 2026-08 -->
+<!-- last-verified: 2026-09 -->
+
+### `World.hpp from JNI socket bindings`
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Android AAR native build fails with `redefinition of 'in6_addr'`, `sockaddr`, etc. in `JavaSockets.cxx` after adding a ZeroTier core include | `node/World.hpp` pulls OS socket headers that clash with lwIP headers already included in the JNI translation unit | Do **not** include `World.hpp` from `JavaSockets.cxx`. Duplicate needed constants in `ZeroTierSockets.h` (e.g. `ZTS_WORLD_MAX_SERIALIZED_LENGTH`) or call helpers implemented in `Utilities.cpp` only |
+
+<!-- last-verified: 2026-09 -->
 
 ### `zts_node_start -2 on restart`
 

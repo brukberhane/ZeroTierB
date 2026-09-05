@@ -26,6 +26,11 @@ class RootsFileStore(private val dir: File) {
         File(dir, CUSTOM_PLANET_NAME).writeBytes(bytes)
     }
 
+    fun writeDummyPlanet(bytes: ByteArray) {
+        dir.mkdirs()
+        dummyPlanetFile().writeBytes(bytes)
+    }
+
     fun deleteCustomPlanet() {
         val file = File(dir, CUSTOM_PLANET_NAME)
         if (file.exists()) file.delete()

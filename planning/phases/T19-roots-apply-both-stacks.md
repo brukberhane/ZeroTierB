@@ -53,6 +53,13 @@ Every PROXY and VPN start **stages** the active planet and **orbits** Room moons
 - `app/src/main/java/com/brukb/zerotier/connection/RuntimeStatusMapper.kt` — Starting vs Online
 - JNI `com.zerotier.sdk.Node.orbit` / `deorbit`
 
+## Reality notes (from T18 plan)
+
+- Dummy blob API: `RootsRepository.ensureDummyPlanet(generate: () -> ByteArray)` + `DummyPlanet.WORLD_ID_HEX`. Do **not** call stock `zts_util_sign_root_set` from Kotlin (CWD `previous.c25519`). Native helper `zts_util_make_dummy_planet()` returns **blob only** (no private keys).
+- PROXY custom/Dummy: `ZeroTierNative.zts_init_set_roots(byte[])` **before** `zts_node_start`. JNI name must be `zts_1init_1set_1roots`.
+- libzt still caches planet as `<home>/roots` (not `planet`).
+- `zts_moon_orbit(id, 0)` allowed after T18 when `.moon` file is in `moons.d`.
+
 ## Implementation Plan
 
 *(Filled by `/task-1-plan`)*
